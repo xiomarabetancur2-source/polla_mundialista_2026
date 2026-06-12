@@ -1,43 +1,78 @@
 /**
- * migrate.js — Migra datos de mundialito.db (SQLite) a PostgreSQL
+ * migrate.js — Crea tablas y siembra datos iniciales en PostgreSQL
  *
- * Uso:
- *   # Con DATABASE_URL (Railway):
- *   DATABASE_URL="postgresql://..." node migrate.js
+ * ✅ SIN dependencia de SQLite ni de mundialito.db
+ * ✅ Seguro para ejecutar en Railway Console
+ * ✅ Idempotente: se puede correr varias veces sin duplicar datos
  *
- *   # Con variables individuales (desarrollo local):
- *   PGHOST=localhost PGDATABASE=mundialito PGUSER=postgres PGPASSWORD=... node migrate.js
+ * Uso en Railway Console:
+ *   node migrate.js
  *
- * Comportamiento:
- *   - Crea las tablas si no existen
- *   - TRUNCA todas las tablas antes de insertar (migración limpia, idempotente)
- *   - Preserva los IDs originales de SQLite y reajusta las secuencias SERIAL
- *   - Requiere que mundialito.db esté en la misma carpeta
+ * Uso local con variables individuales:
+ *   PGHOST=localhost PGDATABASE=mundialito PGUSER=postgres PGPASSWORD=secret node migrate.js
  */
 
 'use strict';
 
-const Database = require('better-sqlite3');
-const { Pool }  = require('pg');
-const path      = require('path');
+const { Pool } = require('pg');
 
-// ── Conexiones ────────────────────────────────────────────────────────────────
-const sqlite = new Database(path.join(__dirname, 'mundialito.db'), { readonly: true });
-
+// ── Conexión ──────────────────────────────────────────────────────────────────
+// Railway inyecta DATABASE_URL automáticamente en el contenedor.
+// Si usas variables individuales (PGHOST, etc.) también funciona.
 const pool = new Pool(
   process.env.DATABASE_URL
     ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }
     : {
-        host:     process.env.PGHOST     || 'localhost',
-        database: process.env.PGDATABASE || 'mundialito',
-        user:     process.env.PGUSER     || 'postgres',
-        password: process.env.PGPASSWORD || '',
+        host:     process.env.PGHOST,
+        database: process.env.PGDATABASE,
+        user:     process.env.PGUSER,
+        password: process.env.PGPASSWORD,
         port:     parseInt(process.env.PGPORT || '5432'),
         ssl:      false
       }
 );
 
-// ── DDL PostgreSQL ────────────────────────────────────────────────────────────
+// ── Seed data ─────────────────────────────────────────────────────────────────
+const PARTIDOS = [
+  [1,'A','11/06/2026','México','Sudáfrica'],
+  [2,'A','11/06/2026','Corea del Sur','República Checa'],
+  [3,'A','18/06/2026','República Checa','Sudáfrica'],
+  [4,'A','18/06/2026','México','Corea del Sur'],
+  [5,'A','24/06/2026','República Checa','México'],
+  [6,'A','24/06/2026','Sudáfrica','Corea del Sur'],
+  [7,'B','12/06/2026','Canadá','Bosnia'],
+  [8,'B','13/06/2026','Catar','Suiza'],
+  [9,'B','18/06/2026','Suiza','Bosnia'],
+  [10,'B','18/06/2026','Canadá','Catar'],
+  [11,'B','24/06/2026','Suiza','Canadá'],
+  [12,'B','24/06/2026','Bosnia','Catar'],
+  [13,'C','13/06/2026','Brasil','Marruecos'],
+  [14,'C','13/06/2026','Haití','Escocia'],
+  [15,'C','19/06/2026','Escocia','Marruecos'],
+  [16,'C','19/06/2026','Brasil','Haití'],
+  [17,'C','24/06/2026','Escocia','Brasil'],
+  [18,'C','24/06/2026','Marruecos','Haití'],
+  [19,'D','12/06/2026','Estados Unidos','Paraguay'],
+  [20,'D','14/06/2026','Australia','Turquía'],
+  [21,'D','19/06/2026','Estados Unidos','Australia'],
+  [22,'D','20/06/2026','Turquía','Paraguay'],
+  [23,'D','25/06/2026','Turquía','Estados Unidos'],
+  [24,'D','25/06/2026','Paraguay','Australia'],
+  [25,'E','14/06/2026','Alemania','Curazao'],
+  [26,'E','14/06/2026','Costa de Marfil','Ecuador'],
+  [27,'E','20/06/2026','Alemania','Costa de Marfil'],
+  [28,'E','20/06/2026','Ecuador','Curazao'],
+  [29,'E','25/06/2026','Curazao','Costa de Marfil'],
+  [30,'E','25/06/2026','Ecuador','Alemania'],
+  [31,'F','14/06/2026','Países Bajos','Japón'],
+  [32,'F','14/06/2026','Suecia','Túnez'],
+  [33,'F','20/06/2026','Países Bajos','Suecia'],
+  [34,'F','20/06/2026','Túnez','Japón'],
+  [35,'F','25/06/2026','Japón','Suecia'],
+  [36,'F','25/06/2026','Túnez','Países Bajos']
+];
+
+// ── Schema DDL ────────────────────────────────────────────────────────────────
 const DDL = `
   CREATE TABLE IF NOT EXISTS equipos (
     id      SERIAL  PRIMARY KEY,
@@ -45,13 +80,15 @@ const DDL = `
     pin     TEXT    NOT NULL,
     activo  INTEGER NOT NULL DEFAULT 1
   );
+
   CREATE TABLE IF NOT EXISTS partidos (
     id      INTEGER PRIMARY KEY,
-    grupo   TEXT NOT NULL,
-    fecha   TEXT NOT NULL,
-    local   TEXT NOT NULL,
-    visita  TEXT NOT NULL
+    grupo   TEXT    NOT NULL,
+    fecha   TEXT    NOT NULL,
+    local   TEXT    NOT NULL,
+    visita  TEXT    NOT NULL
   );
+
   CREATE TABLE IF NOT EXISTS resultados (
     id         SERIAL  PRIMARY KEY,
     partido_id INTEGER NOT NULL UNIQUE,
@@ -59,6 +96,7 @@ const DDL = `
     visita     INTEGER NOT NULL,
     FOREIGN KEY (partido_id) REFERENCES partidos(id)
   );
+
   CREATE TABLE IF NOT EXISTS predicciones (
     id         SERIAL  PRIMARY KEY,
     equipo_id  INTEGER NOT NULL,
@@ -69,6 +107,7 @@ const DDL = `
     FOREIGN KEY (equipo_id)  REFERENCES equipos(id),
     FOREIGN KEY (partido_id) REFERENCES partidos(id)
   );
+
   CREATE TABLE IF NOT EXISTS adherencia (
     id        SERIAL  PRIMARY KEY,
     equipo_id INTEGER NOT NULL,
@@ -77,6 +116,7 @@ const DDL = `
     UNIQUE(equipo_id, fecha),
     FOREIGN KEY (equipo_id) REFERENCES equipos(id)
   );
+
   CREATE TABLE IF NOT EXISTS bonos (
     id          SERIAL  PRIMARY KEY,
     equipo_id   INTEGER NOT NULL,
@@ -85,6 +125,7 @@ const DDL = `
     fecha       TEXT    NOT NULL,
     FOREIGN KEY (equipo_id) REFERENCES equipos(id)
   );
+
   CREATE TABLE IF NOT EXISTS penalizaciones (
     id          SERIAL  PRIMARY KEY,
     equipo_id   INTEGER NOT NULL,
@@ -95,140 +136,85 @@ const DDL = `
   );
 `;
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function log(msg) { console.log(`  ${msg}`); }
-
-// Reinicia la secuencia SERIAL de una tabla al valor máximo de id actual
-async function resetSeq(client, table) {
-  await client.query(
-    `SELECT setval('${table}_id_seq', COALESCE((SELECT MAX(id) FROM ${table}), 0))`
-  );
-}
-
-// ── Migración ─────────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 async function migrate() {
-  console.log('🚀 Iniciando migración SQLite → PostgreSQL\n');
+  console.log('🚀 Iniciando setup de PostgreSQL...\n');
 
-  // 1. Leer todos los datos de SQLite
-  const data = {
-    partidos:       sqlite.prepare('SELECT * FROM partidos      ORDER BY id').all(),
-    equipos:        sqlite.prepare('SELECT * FROM equipos       ORDER BY id').all(),
-    resultados:     sqlite.prepare('SELECT * FROM resultados    ORDER BY id').all(),
-    predicciones:   sqlite.prepare('SELECT * FROM predicciones  ORDER BY id').all(),
-    adherencia:     sqlite.prepare('SELECT * FROM adherencia    ORDER BY id').all(),
-    bonos:          sqlite.prepare('SELECT * FROM bonos         ORDER BY id').all(),
-    penalizaciones: sqlite.prepare('SELECT * FROM penalizaciones ORDER BY id').all()
-  };
-
-  console.log('📂 Datos leídos desde SQLite:');
-  for (const [t, rows] of Object.entries(data)) log(`${t}: ${rows.length} fila(s)`);
-  console.log();
+  // Verificar conexión antes de empezar
+  try {
+    await pool.query('SELECT 1');
+    console.log('✅ Conexión a PostgreSQL exitosa\n');
+  } catch (err) {
+    console.error('❌ No se pudo conectar a PostgreSQL.');
+    console.error('   Verifica que DATABASE_URL o las variables PG* estén configuradas.');
+    throw err;
+  }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // 2. Crear tablas si no existen
-    console.log('🔨 Creando tablas (si no existen)...');
+    // 1. Crear tablas
+    console.log('📋 Creando tablas (CREATE TABLE IF NOT EXISTS)...');
     await client.query(DDL);
-    log('OK');
+    console.log('   ✓ Esquema aplicado\n');
 
-    // 3. Limpiar tablas respetando FK (orden inverso de dependencias)
-    console.log('\n🗑️  Limpiando tablas existentes...');
-    await client.query(`
-      TRUNCATE TABLE penalizaciones, bonos, adherencia, predicciones, resultados
-      RESTART IDENTITY CASCADE
-    `);
-    // equipos y partidos al final porque otros dependen de ellos
-    await client.query('TRUNCATE TABLE equipos RESTART IDENTITY CASCADE');
-    await client.query('TRUNCATE TABLE partidos RESTART IDENTITY CASCADE');
-    log('OK');
-
-    // 4. Insertar en orden de dependencias
-    // ── partidos (id INTEGER, no SERIAL — se inserta directamente) ────────────
-    console.log('\n📥 Insertando datos...');
-    for (const p of data.partidos) {
-      await client.query(
-        'INSERT INTO partidos (id,grupo,fecha,local,visita) VALUES ($1,$2,$3,$4,$5)',
-        [p.id, p.grupo, p.fecha, p.local, p.visita]
-      );
+    // 2. Seed partidos (solo si la tabla está vacía)
+    const { rows: [{ c: pc }] } = await client.query('SELECT COUNT(*)::int AS c FROM partidos');
+    if (pc === 0) {
+      console.log('⚽ Insertando 36 partidos...');
+      for (const [id, grupo, fecha, local, visita] of PARTIDOS) {
+        await client.query(
+          'INSERT INTO partidos (id,grupo,fecha,local,visita) VALUES ($1,$2,$3,$4,$5)',
+          [id, grupo, fecha, local, visita]
+        );
+      }
+      console.log('   ✓ 36 partidos insertados\n');
+    } else {
+      console.log(`⚽ Partidos: ${pc} ya existen — no se modificaron\n`);
     }
-    log(`partidos: ${data.partidos.length}`);
 
-    // ── equipos (SERIAL — insertar con id explícito, luego resetear seq) ──────
-    for (const e of data.equipos) {
-      await client.query(
-        'INSERT INTO equipos (id,nombre,pin,activo) VALUES ($1,$2,$3,$4)',
-        [e.id, e.nombre, e.pin, e.activo]
-      );
+    // 3. Seed equipos (solo si la tabla está vacía)
+    const { rows: [{ c: ec }] } = await client.query('SELECT COUNT(*)::int AS c FROM equipos');
+    if (ec === 0) {
+      console.log('👥 Insertando 10 equipos con PINs por defecto...');
+      for (let i = 1; i <= 10; i++) {
+        const pin = i === 10 ? '0000' : String(i).repeat(4);
+        await client.query(
+          'INSERT INTO equipos (nombre, pin, activo) VALUES ($1, $2, 1)',
+          [`Equipo ${i}`, pin]
+        );
+      }
+      console.log('   ✓ 10 equipos insertados\n');
+      console.log('   PINs por defecto:');
+      console.log('   Equipo 1→1111  Equipo 2→2222  ...  Equipo 9→9999  Equipo 10→0000\n');
+    } else {
+      console.log(`👥 Equipos: ${ec} ya existen — no se modificaron\n`);
     }
-    await resetSeq(client, 'equipos');
-    log(`equipos: ${data.equipos.length}`);
-
-    // ── resultados ────────────────────────────────────────────────────────────
-    for (const r of data.resultados) {
-      await client.query(
-        'INSERT INTO resultados (id,partido_id,local,visita) VALUES ($1,$2,$3,$4)',
-        [r.id, r.partido_id, r.local, r.visita]
-      );
-    }
-    if (data.resultados.length) await resetSeq(client, 'resultados');
-    log(`resultados: ${data.resultados.length}`);
-
-    // ── predicciones ──────────────────────────────────────────────────────────
-    for (const p of data.predicciones) {
-      await client.query(
-        'INSERT INTO predicciones (id,equipo_id,partido_id,local,visita) VALUES ($1,$2,$3,$4,$5)',
-        [p.id, p.equipo_id, p.partido_id, p.local, p.visita]
-      );
-    }
-    if (data.predicciones.length) await resetSeq(client, 'predicciones');
-    log(`predicciones: ${data.predicciones.length}`);
-
-    // ── adherencia ────────────────────────────────────────────────────────────
-    for (const a of data.adherencia) {
-      await client.query(
-        'INSERT INTO adherencia (id,equipo_id,fecha,puntos) VALUES ($1,$2,$3,$4)',
-        [a.id, a.equipo_id, a.fecha, a.puntos]
-      );
-    }
-    if (data.adherencia.length) await resetSeq(client, 'adherencia');
-    log(`adherencia: ${data.adherencia.length}`);
-
-    // ── bonos ─────────────────────────────────────────────────────────────────
-    for (const b of data.bonos) {
-      await client.query(
-        'INSERT INTO bonos (id,equipo_id,puntos,descripcion,fecha) VALUES ($1,$2,$3,$4,$5)',
-        [b.id, b.equipo_id, b.puntos, b.descripcion, b.fecha]
-      );
-    }
-    if (data.bonos.length) await resetSeq(client, 'bonos');
-    log(`bonos: ${data.bonos.length}`);
-
-    // ── penalizaciones ────────────────────────────────────────────────────────
-    for (const p of data.penalizaciones) {
-      await client.query(
-        'INSERT INTO penalizaciones (id,equipo_id,puntos,descripcion,fecha) VALUES ($1,$2,$3,$4,$5)',
-        [p.id, p.equipo_id, p.puntos, p.descripcion, p.fecha]
-      );
-    }
-    if (data.penalizaciones.length) await resetSeq(client, 'penalizaciones');
-    log(`penalizaciones: ${data.penalizaciones.length}`);
 
     await client.query('COMMIT');
-    console.log('\n✅ Migración completada exitosamente');
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('\n❌ Error — se hizo ROLLBACK. No se modificó nada en PostgreSQL.');
+    console.error('\n❌ Error — ROLLBACK ejecutado. No se modificó nada.');
     throw err;
   } finally {
     client.release();
-    await pool.end();
-    sqlite.close();
   }
+
+  // 4. Verificación final (fuera de la transacción)
+  console.log('📊 Verificación — filas en cada tabla:');
+  const tablas = ['partidos','equipos','resultados','predicciones','adherencia','bonos','penalizaciones'];
+  for (const tabla of tablas) {
+    const { rows: [{ c }] } = await pool.query(`SELECT COUNT(*)::int AS c FROM ${tabla}`);
+    const ok = (tabla === 'partidos' && c === 36) || (tabla === 'equipos' && c >= 1) || !['partidos','equipos'].includes(tabla);
+    console.log(`   ${ok ? '✓' : '⚠'} ${tabla.padEnd(16)} ${c} fila(s)`);
+  }
+
+  await pool.end();
+  console.log('\n✅ Setup completado. La aplicación está lista para usar.');
 }
 
 migrate().catch((err) => {
-  console.error(err.message);
+  console.error('\n' + err.message);
   process.exit(1);
 });
