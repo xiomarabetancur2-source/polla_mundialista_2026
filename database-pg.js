@@ -141,12 +141,23 @@ const PARTIDOS_72 = [
   [72,'J','27/06/2026','21:00','Argelia','Austria']
 ];
 
+// Mapeo de IDs viejos (1-36) a nuevos (1-72) para migración automática
+const PARTIDO_MAPPING = {
+  1:1,  2:2,  3:25, 4:28, 5:53, 6:54,
+  7:3,  8:5,  9:26, 10:27, 11:49, 12:50,
+  13:6, 14:7, 15:30, 16:31, 17:51, 18:52,
+  19:4, 20:8, 21:29, 22:32, 23:59, 24:60,
+  25:9, 26:10, 27:34, 28:35, 29:56, 30:55,
+  31:11, 32:12, 33:33, 34:36, 35:58, 36:57
+};
+
 // ── initDB ────────────────────────────────────────────────────────────────────
 async function initDB() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
+    // ── 1. Tablas que no cambian de esquema ───────────────────────────────────
     await client.query(`
       CREATE TABLE IF NOT EXISTS sedes (
         id         SERIAL PRIMARY KEY,
@@ -167,6 +178,7 @@ async function initDB() {
       )
     `);
 
+    // Crear partidos con nuevo esquema si no existe aún
     await client.query(`
       CREATE TABLE IF NOT EXISTS partidos (
         id         INTEGER PRIMARY KEY,
@@ -235,7 +247,101 @@ async function initDB() {
       )
     `);
 
-    // Seed sedes
+    // ── 2. Migración automática de esquema ────────────────────────────────────
+    // Detectar columnas actuales de partidos y equipos
+    const { rows: pCols } = await client.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='partidos'`
+    );
+    const partidosCols = new Set(pCols.map(r => r.column_name));
+
+    const { rows: eCols } = await client.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='equipos'`
+    );
+    const equiposCols = new Set(eCols.map(r => r.column_name));
+
+    // Agregar sede_id a equipos si falta
+    if (!equiposCols.has('sede_id')) {
+      await client.query('ALTER TABLE equipos ADD COLUMN sede_id INTEGER');
+      console.log('  → sede_id agregado a equipos');
+    }
+
+    if (partidosCols.has('fecha') && !partidosCols.has('fecha_hora')) {
+      // Esquema viejo detectado: migrar a 72 partidos con timestamps
+      console.log('  → Esquema viejo detectado, migrando a 72 partidos...');
+
+      // Guardar predicciones y resultados existentes
+      const predsBackup = (await client.query('SELECT * FROM predicciones')).rows;
+      const resBackup   = (await client.query('SELECT * FROM resultados')).rows;
+      console.log(`  → Backup: ${predsBackup.length} predicciones, ${resBackup.length} resultados`);
+
+      // Vaciar tablas dependientes y partidos
+      await client.query('DELETE FROM predicciones');
+      await client.query('DELETE FROM resultados');
+      await client.query('DELETE FROM partidos');
+
+      // Cambiar esquema de partidos
+      await client.query('ALTER TABLE partidos DROP COLUMN fecha');
+      await client.query('ALTER TABLE partidos ADD COLUMN fecha_hora TIMESTAMPTZ');
+      await client.query('ALTER TABLE partidos ADD COLUMN sede_id INTEGER');
+      await client.query('ALTER TABLE partidos ADD COLUMN bloqueado INTEGER NOT NULL DEFAULT 0');
+
+      // Insertar 72 partidos con horarios
+      const { rows: [sedeRow] } = await client.query("SELECT id FROM sedes WHERE slug='gca-cali'");
+      const sedeId = sedeRow ? sedeRow.id : 1;
+      for (const [id, grupo, fecha, hora, local, visita] of PARTIDOS_72) {
+        await client.query(
+          'INSERT INTO partidos (id,grupo,fecha_hora,local,visita,sede_id,bloqueado) VALUES ($1,$2,$3,$4,$5,$6,0)',
+          [id, grupo, toTimestamp(fecha, hora), local, visita, sedeId]
+        );
+      }
+      console.log('  → 72 partidos insertados');
+
+      // Restaurar resultados con IDs mapeados
+      let resMig = 0;
+      for (const r of resBackup) {
+        const nuevoId = PARTIDO_MAPPING[r.partido_id];
+        if (nuevoId) {
+          await client.query(
+            'INSERT INTO resultados (partido_id,local,visita) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+            [nuevoId, r.local, r.visita]
+          );
+          resMig++;
+        }
+      }
+
+      // Restaurar predicciones con IDs mapeados
+      let predMig = 0;
+      for (const p of predsBackup) {
+        const nuevoId = PARTIDO_MAPPING[p.partido_id];
+        if (nuevoId) {
+          await client.query(
+            'INSERT INTO predicciones (equipo_id,partido_id,local,visita) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING',
+            [p.equipo_id, nuevoId, p.local, p.visita]
+          );
+          predMig++;
+        }
+      }
+      console.log(`  → Migradas: ${resMig} resultados, ${predMig} predicciones`);
+
+    } else {
+      // Esquema nuevo: agregar columnas faltantes sin perder datos
+      if (!partidosCols.has('fecha_hora')) {
+        await client.query('ALTER TABLE partidos ADD COLUMN fecha_hora TIMESTAMPTZ');
+        console.log('  → fecha_hora agregado a partidos');
+      }
+      if (!partidosCols.has('sede_id')) {
+        await client.query('ALTER TABLE partidos ADD COLUMN sede_id INTEGER');
+        console.log('  → sede_id agregado a partidos');
+      }
+      if (!partidosCols.has('bloqueado')) {
+        await client.query('ALTER TABLE partidos ADD COLUMN bloqueado INTEGER NOT NULL DEFAULT 0');
+        console.log('  → bloqueado agregado a partidos');
+      }
+    }
+
+    // ── 3. Seeds (solo si las tablas están vacías) ────────────────────────────
     const { rows: [{ c: sc }] } = await client.query('SELECT COUNT(*)::int AS c FROM sedes');
     if (sc === 0) {
       await client.query(
@@ -243,11 +349,10 @@ async function initDB() {
       );
     }
 
-    // Seed partidos
     const { rows: [{ c: pc }] } = await client.query('SELECT COUNT(*)::int AS c FROM partidos');
     if (pc === 0) {
-      const { rows: [sede] } = await client.query("SELECT id FROM sedes WHERE slug='gca-cali'");
-      const sedeId = sede ? sede.id : 1;
+      const { rows: [sedeRow] } = await client.query("SELECT id FROM sedes WHERE slug='gca-cali'");
+      const sedeId = sedeRow ? sedeRow.id : 1;
       for (const [id, grupo, fecha, hora, local, visita] of PARTIDOS_72) {
         await client.query(
           'INSERT INTO partidos (id,grupo,fecha_hora,local,visita,sede_id,bloqueado) VALUES ($1,$2,$3,$4,$5,$6,0)',
@@ -256,11 +361,10 @@ async function initDB() {
       }
     }
 
-    // Seed equipos
     const { rows: [{ c: ec }] } = await client.query('SELECT COUNT(*)::int AS c FROM equipos');
     if (ec === 0) {
-      const { rows: [sede] } = await client.query("SELECT id FROM sedes WHERE slug='gca-cali'");
-      const sedeId = sede ? sede.id : 1;
+      const { rows: [sedeRow] } = await client.query("SELECT id FROM sedes WHERE slug='gca-cali'");
+      const sedeId = sedeRow ? sedeRow.id : 1;
       for (let i = 1; i <= 10; i++) {
         await client.query(
           'INSERT INTO equipos (nombre,pin,activo,sede_id) VALUES ($1,$2,1,$3)',
