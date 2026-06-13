@@ -497,7 +497,7 @@ const stmts = {
   findEquipo:          prepare('SELECT * FROM equipos WHERE id=? AND pin=? AND activo=1'),
   updateEquipo:        prepare('UPDATE equipos SET nombre=?,pin=? WHERE id=?'),
   toggleEquipo:        prepare('UPDATE equipos SET activo=CASE WHEN activo=1 THEN 0 ELSE 1 END WHERE id=?'),
-  insertEquipo:        prepare('INSERT INTO equipos (nombre,pin,activo) VALUES (?,?,1)'),
+  insertEquipo:        prepare('INSERT INTO equipos (nombre,pin,activo,sede_id) VALUES (?,?,1,?)'),
   upsertResultado:     prepare('INSERT INTO resultados (partido_id,local,visita) VALUES (?,?,?) ON CONFLICT(partido_id) DO UPDATE SET local=EXCLUDED.local,visita=EXCLUDED.visita'),
   deleteResultado:     prepare('DELETE FROM resultados WHERE partido_id=?'),
   deleteAllResultados: prepare('DELETE FROM resultados'),
@@ -519,7 +519,7 @@ module.exports = {
   findEquipo:           (id, pin)                 => stmts.findEquipo.get(id, pin),
   updateEquipo:         (id, nombre, pin)          => stmts.updateEquipo.run(nombre, pin, id),
   toggleEquipo:         (id)                       => stmts.toggleEquipo.run(id),
-  insertEquipo:         (nombre, pin)              => stmts.insertEquipo.run(nombre, pin),
+  insertEquipo:         (nombre, pin, sedeId)       => stmts.insertEquipo.run(nombre, pin, sedeId || null),
   // Resultados
   upsertResultado:      (pid, local, visita)       => stmts.upsertResultado.run(pid, local, visita),
   deleteResultado:      (pid)                      => stmts.deleteResultado.run(pid),

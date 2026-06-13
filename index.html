@@ -488,11 +488,14 @@
     <div class="login-card">
       <h1>⚽ MUNDIALITO GCA 2026</h1>
       <p style="margin-bottom: 1rem; color: #a0a0a0;">GCA Technologies</p>
+      <select id="loginSede" onchange="filtrarEquiposPorSede()">
+        <option value="">-- Selecciona tu sede --</option>
+      </select>
       <select id="loginEquipo">
         <option value="">-- Selecciona tu equipo --</option>
       </select>
       <input type="password" id="loginPin" placeholder="PIN de equipo" maxlength="4">
-      <div id="loginError" class="error">❌ PIN incorrecto</div>
+      <div id="loginError" class="error">❌ Sede, equipo o PIN incorrecto</div>
       <button onclick="doLogin()">INGRESAR</button>
       <button onclick="showAdminLogin()" style="background: rgba(13, 33, 55, 0.8); margin-top: 5px;">🔐 ADMINISTRADOR</button>
       <div id="connectionStatus" style="color: #888; font-size: 0.75rem; margin-top: 10px;">⏳ Conectando...</div>
@@ -678,7 +681,7 @@
 
     socket.on('data-update', (data) => {
       applyServerData(data);
-      cargarEquiposLogin();
+      cargarSedesLogin();
       renderCurrentPage();
     });
 
@@ -694,12 +697,13 @@
 
     function calcularTotalPuntos() {
       const ranking = [];
-      for (const equipo of equipos) {
+      const misPartidos = getPartidosDeSede();
+      for (const equipo of getEquiposDeSede()) {
         if (!equipo.activo) continue;
         let puntosPrediccion = 0;
         let exactos = 0;
         const predsEquipo = predicciones[equipo.id] || {};
-        for (const partido of partidosData) {
+        for (const partido of misPartidos) {
           const resultado = resultados[partido.id];
           const prediccion = predsEquipo[partido.id];
           if (resultado && prediccion && prediccion.local !== undefined && prediccion.visita !== undefined) {
@@ -744,7 +748,8 @@
         </table>
       `;
 
-      const proximos = partidosData.filter(p => !resultados[p.id]).slice(0, 5);
+      const misPartidos = getPartidosDeSede();
+      const proximos = misPartidos.filter(p => !resultados[p.id]).slice(0, 5);
       document.getElementById('proximosPartidos').innerHTML = proximos.map(p => `
         <div class="partido-item">
           <div class="partido-equipos">
@@ -756,7 +761,7 @@
         </div>
       `).join('') || '<div style="text-align:center; padding:20px">✅ ¡Todos los partidos jugados!</div>';
 
-      const ultimos = partidosData.filter(p => resultados[p.id]).slice(-5).reverse();
+      const ultimos = misPartidos.filter(p => resultados[p.id]).slice(-5).reverse();
       document.getElementById('ultimosResultados').innerHTML = ultimos.map(p => `
         <div class="partido-item">
           <div class="partido-equipos">
@@ -773,7 +778,7 @@
         <div class="stat-card"><div class="value">${top.nombre}</div><div>🏆 Líder</div></div>
         <div class="stat-card"><div class="value">${top.total}</div><div>Puntos Totales</div></div>
         <div class="stat-card"><div class="value">${top.exactos}</div><div>🎯 Exactos</div></div>
-        <div class="stat-card"><div class="value">${Object.keys(resultados).length}</div><div>Partidos Jugados</div></div>
+        <div class="stat-card"><div class="value">${misPartidos.filter(p => resultados[p.id]).length}</div><div>Partidos Jugados</div></div>
       `;
     }
 
@@ -785,7 +790,7 @@
       }
       const misPreds = predicciones[currentUser.id] || {};
       const grupos = {};
-      for (const p of partidosData) {
+      for (const p of getPartidosDeSede()) {
         if (!grupos[p.grupo]) grupos[p.grupo] = [];
         grupos[p.grupo].push(p);
       }
@@ -849,19 +854,44 @@
 
     // ==================== ADMIN - EQUIPOS ====================
     function renderAdminEquipos() {
+      const filtroSede = document.getElementById('adminEqSedeFilter')?.value || '';
+      const eqFiltrados = filtroSede
+        ? equipos.filter(e => String(e.sede_id) === filtroSede)
+        : equipos;
+
       document.getElementById('adminEquipos').innerHTML = `
         <div class="card">
           <div class="card-title">👥 Gestión de Equipos</div>
-          ${equipos.map(eq => `
+          <div style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
+            <label style="font-size:0.85rem">Sede:</label>
+            <select id="adminEqSedeFilter" onchange="renderAdminEquipos()" style="padding:4px 8px; background:rgba(13,33,55,0.8); border:1px solid rgba(192,192,192,0.3); border-radius:6px; color:white">
+              <option value="">Todas</option>
+              ${sedes.map(s => `<option value="${s.id}" ${String(s.id) === filtroSede ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+            </select>
+          </div>
+          ${eqFiltrados.map(eq => {
+            const sedeNom = sedes.find(s => s.id === eq.sede_id)?.nombre || '—';
+            return `
             <div class="equipo-row">
-              <input type="text" id="nombre_${eq.id}" value="${eq.nombre}" style="width:150px">
-              <input type="password" id="pin_${eq.id}" value="${eq.pin}" style="width:80px">
-              <span style="color: ${eq.activo ? '#6c9ebf' : '#ff6b6b'}">${eq.activo ? '✅ Activo' : '❌ Inactivo'}</span>
+              <input type="text" id="nombre_${eq.id}" value="${eq.nombre}" style="width:140px">
+              <input type="password" id="pin_${eq.id}" value="${eq.pin}" style="width:70px">
+              <span style="font-size:0.75rem; color:#888; min-width:80px">${sedeNom}</span>
+              <span style="color: ${eq.activo ? '#6c9ebf' : '#ff6b6b'}">${eq.activo ? '✅' : '❌'}</span>
               <button class="btn btn-primary" onclick="guardarEquipo(${eq.id})">💾</button>
               <button class="btn ${eq.activo ? 'btn-danger' : 'btn-success'}" onclick="toggleEquipo(${eq.id})">${eq.activo ? '❌' : '✅'}</button>
+            </div>`;
+          }).join('')}
+          <div style="margin-top:1rem; padding-top:1rem; border-top:1px solid rgba(192,192,192,0.2)">
+            <div style="color:#c0c0c0; font-size:0.85rem; margin-bottom:0.5rem">Agregar nuevo equipo</div>
+            <div class="equipo-row">
+              <input type="text" id="nuevoEqNombre" placeholder="Nombre" style="width:140px">
+              <input type="password" id="nuevoEqPin" placeholder="PIN (4 dígitos)" style="width:70px">
+              <select id="nuevoEqSede" style="padding:4px 8px; background:rgba(13,33,55,0.8); border:1px solid rgba(192,192,192,0.3); border-radius:6px; color:white">
+                ${sedes.filter(s => s.activo).map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+              </select>
+              <button class="btn btn-primary" onclick="agregarEquipo()">+ Agregar</button>
             </div>
-          `).join('')}
-          <button class="btn btn-primary" style="margin-top:1rem" onclick="agregarEquipo()">+ Agregar Equipo</button>
+          </div>
         </div>
       `;
     }
@@ -880,9 +910,20 @@
     }
 
     async function agregarEquipo() {
-      const newNum = equipos.length + 1;
-      await apiCall('POST', '/api/equipos', { nombre: `Equipo ${newNum}`, pin: String(newNum).padStart(4, '0') });
+      const nombre = document.getElementById('nuevoEqNombre')?.value?.trim();
+      const pin    = document.getElementById('nuevoEqPin')?.value?.trim();
+      const sedeId = parseInt(document.getElementById('nuevoEqSede')?.value) || sedes[0]?.id || null;
+      if (!nombre || !pin) { mostrarToast('❌ Ingresa nombre y PIN', 'error'); return; }
+      await apiCall('POST', '/api/equipos', { nombre, pin, sedeId });
       mostrarToast('➕ Equipo agregado');
+    }
+
+    async function agregarEquipoASede(sedeId) {
+      const nombre = document.getElementById(`sedeNewEqNombre_${sedeId}`)?.value?.trim();
+      const pin    = document.getElementById(`sedeNewEqPin_${sedeId}`)?.value?.trim();
+      if (!nombre || !pin) { mostrarToast('❌ Ingresa nombre y PIN', 'error'); return; }
+      await apiCall('POST', '/api/equipos', { nombre, pin, sedeId });
+      mostrarToast('➕ Equipo agregado a la sede');
     }
 
     // ==================== ADMIN - RESULTADOS ====================
@@ -1125,26 +1166,47 @@
 
     // ==================== ADMIN - SEDES ====================
     function renderAdminSedes() {
-      document.getElementById('adminSedes').innerHTML = `
-        <div class="card">
-          <div class="card-title">🏟️ Gestión de Sedes</div>
-          ${sedes.map(s => `
-            <div class="equipo-row">
-              <input type="text" id="sedeNombre_${s.id}" value="${s.nombre}" style="width:200px" placeholder="Nombre">
-              <input type="text" id="sedeSlug_${s.id}" value="${s.slug}" style="width:130px" placeholder="slug-identificador">
+      let html = `<div class="card"><div class="card-title">🏟️ Gestión de Sedes</div>`;
+
+      for (const s of sedes) {
+        const eqDeSede = equipos.filter(e => e.sede_id === s.id);
+        html += `
+          <div style="margin-bottom:1.5rem; padding:1rem; background:rgba(13,33,55,0.4); border-radius:8px; border:1px solid rgba(192,192,192,0.2)">
+            <div class="equipo-row" style="margin-bottom:0.5rem">
+              <input type="text" id="sedeNombre_${s.id}" value="${s.nombre}" style="width:180px" placeholder="Nombre">
+              <input type="text" id="sedeSlug_${s.id}" value="${s.slug}" style="width:120px" placeholder="slug">
               <span style="color: ${s.activo ? '#6c9ebf' : '#ff6b6b'}">${s.activo ? '✅ Activa' : '❌ Inactiva'}</span>
               <button class="btn btn-primary" onclick="guardarSede(${s.id})">💾</button>
               <button class="btn ${s.activo ? 'btn-danger' : 'btn-success'}" onclick="toggleSede(${s.id})">${s.activo ? '❌' : '✅'}</button>
             </div>
-          `).join('')}
-          <hr style="margin: 1rem 0; border-color: rgba(192,192,192,0.2)">
-          <div class="equipo-row">
-            <input type="text" id="nuevaSedeNombre" placeholder="Nombre nueva sede" style="width:200px">
-            <input type="text" id="nuevaSedeSlug" placeholder="slug-nueva" style="width:130px">
-            <button class="btn btn-primary" onclick="agregarSede()">+ Agregar Sede</button>
-          </div>
+            <div style="font-size:0.8rem; color:#a0a0a0; margin-bottom:0.5rem; padding-left:0.25rem">
+              ${eqDeSede.length} equipo(s) en esta sede
+            </div>
+            ${eqDeSede.map(e => `
+              <div style="display:flex; gap:0.5rem; margin:3px 0; align-items:center; font-size:0.82rem; padding-left:0.5rem">
+                <span style="color:#c0c0c0">• ${e.nombre}</span>
+                <span style="color:#666">PIN: ${e.pin}</span>
+                <span>${e.activo ? '✅' : '❌'}</span>
+              </div>`).join('')}
+            <div class="equipo-row" style="margin-top:0.75rem; padding-top:0.5rem; border-top:1px solid rgba(192,192,192,0.1)">
+              <input type="text" id="sedeNewEqNombre_${s.id}" placeholder="Nombre nuevo equipo" style="width:160px; font-size:0.8rem; padding:4px 8px">
+              <input type="password" id="sedeNewEqPin_${s.id}" placeholder="PIN (4 dígitos)" style="width:80px; font-size:0.8rem; padding:4px 8px">
+              <button class="btn btn-success" onclick="agregarEquipoASede(${s.id})">+ Agregar equipo</button>
+            </div>
+          </div>`;
+      }
+
+      html += `
+        <hr style="margin:1rem 0; border-color:rgba(192,192,192,0.2)">
+        <div style="color:#c0c0c0; font-size:0.85rem; margin-bottom:0.5rem">Nueva sede</div>
+        <div class="equipo-row">
+          <input type="text" id="nuevaSedeNombre" placeholder="Nombre nueva sede" style="width:180px">
+          <input type="text" id="nuevaSedeSlug" placeholder="slug-nueva-sede" style="width:130px">
+          <button class="btn btn-primary" onclick="agregarSede()">+ Agregar Sede</button>
         </div>
-      `;
+      </div>`;
+
+      document.getElementById('adminSedes').innerHTML = html;
     }
 
     async function guardarSede(id) {
@@ -1208,17 +1270,19 @@
 
     // ==================== AUTENTICACIÓN ====================
     async function doLogin() {
-      const equipoId = parseInt(document.getElementById('loginEquipo').value);
+      const sedeId = parseInt(document.getElementById('loginSede').value) || 0;
+      const equipoId = parseInt(document.getElementById('loginEquipo').value) || 0;
       const pin = document.getElementById('loginPin').value;
-      if (!equipoId) { document.getElementById('loginError').style.display = 'block'; return; }
+      if (!sedeId || !equipoId) { document.getElementById('loginError').style.display = 'block'; return; }
       const res = await apiCall('POST', '/api/auth/equipo', { equipoId, pin });
       if (res.error || !res.equipo) { document.getElementById('loginError').style.display = 'block'; return; }
       document.getElementById('loginError').style.display = 'none';
       const equipo = res.equipo;
-      currentUser = { id: equipo.id, nombre: equipo.nombre, isAdmin: false };
+      const sedeNombre = sedes.find(s => s.id === (equipo.sede_id || sedeId))?.nombre || '';
+      currentUser = { id: equipo.id, nombre: equipo.nombre, isAdmin: false, sedeId: equipo.sede_id || sedeId };
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('app').style.display = 'block';
-      document.getElementById('userBadge').textContent = `🟢 ${equipo.nombre}`;
+      document.getElementById('userBadge').textContent = `🟢 ${equipo.nombre}${sedeNombre ? ' · ' + sedeNombre : ''}`;
       showPage('dashboard');
       actualizarMobileNav();
     }
@@ -1243,6 +1307,11 @@
       document.getElementById('loginScreen').style.display = 'flex';
       document.getElementById('loginPin').value = '';
       document.getElementById('adminBtn').style.display = 'none';
+      // Resetear selección de sede/equipo
+      const selSede = document.getElementById('loginSede');
+      if (selSede) selSede.value = '';
+      const selEq = document.getElementById('loginEquipo');
+      if (selEq) selEq.innerHTML = '<option value="">-- Selecciona tu equipo --</option>';
     }
 
     function showAdminLogin() {
@@ -1267,11 +1336,32 @@
       `).join('');
     }
 
-    function cargarEquiposLogin() {
-      const select = document.getElementById('loginEquipo');
-      if (!select) return;
-      select.innerHTML = '<option value="">-- Selecciona tu equipo --</option>' +
-        equipos.filter(e => e.activo).map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
+    // Devuelve equipos/partidos filtrados por la sede del usuario actual
+    function getEquiposDeSede() {
+      if (!currentUser || currentUser.isAdmin || !currentUser.sedeId) return equipos;
+      return equipos.filter(e => e.sede_id === currentUser.sedeId);
+    }
+    function getPartidosDeSede() {
+      if (!currentUser || currentUser.isAdmin || !currentUser.sedeId) return partidosData;
+      return partidosData.filter(p => p.sede_id === currentUser.sedeId);
+    }
+
+    function cargarSedesLogin() {
+      const selSede = document.getElementById('loginSede');
+      if (!selSede) return;
+      const val = selSede.value;
+      selSede.innerHTML = '<option value="">-- Selecciona tu sede --</option>' +
+        sedes.filter(s => s.activo).map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
+      if (val) { selSede.value = val; filtrarEquiposPorSede(); }
+    }
+
+    function filtrarEquiposPorSede() {
+      const sedeId = parseInt(document.getElementById('loginSede')?.value) || 0;
+      const sel = document.getElementById('loginEquipo');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">-- Selecciona tu equipo --</option>' +
+        equipos.filter(e => e.activo && (!sedeId || e.sede_id === sedeId))
+               .map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
     }
 
     function mostrarToast(mensaje, tipo = 'success') {
@@ -1305,6 +1395,8 @@
     window.guardarSede = guardarSede;
     window.toggleSede = toggleSede;
     window.agregarSede = agregarSede;
+    window.agregarEquipoASede = agregarEquipoASede;
+    window.filtrarEquiposPorSede = filtrarEquiposPorSede;
     window.showPage = showPage;
     window.showAdminTab = showAdminTab;
     window.doLogin = doLogin;

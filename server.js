@@ -51,8 +51,8 @@ app.put('/api/equipos/:id', wrap(async (req, res) => {
 }));
 
 app.post('/api/equipos', wrap(async (req, res) => {
-  const { nombre, pin } = req.body;
-  const r = await db.insertEquipo(nombre, String(pin));
+  const { nombre, pin, sedeId } = req.body;
+  const r = await db.insertEquipo(nombre, String(pin), sedeId ? parseInt(sedeId) : null);
   await broadcast();
   res.json({ id: r.lastInsertRowid });
 }));
