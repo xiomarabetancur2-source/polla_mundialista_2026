@@ -84,11 +84,43 @@ app.delete('/api/resultados/:partidoId', wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── Sedes ─────────────────────────────────────────────────────────────────────
+app.get('/api/sedes', wrap(async (_req, res) => {
+  res.json(await db.getSedes());
+}));
+
+app.post('/api/sedes', wrap(async (req, res) => {
+  const { nombre, slug } = req.body;
+  const r = await db.createSede(nombre, slug);
+  await broadcast();
+  res.json({ id: r.lastInsertRowid });
+}));
+
+app.put('/api/sedes/:id', wrap(async (req, res) => {
+  const { nombre, slug } = req.body;
+  await db.updateSede(parseInt(req.params.id), nombre, slug);
+  await broadcast();
+  res.json({ ok: true });
+}));
+
+app.put('/api/sedes/:id/toggle', wrap(async (req, res) => {
+  await db.toggleSede(parseInt(req.params.id));
+  await broadcast();
+  res.json({ ok: true });
+}));
+
+// ── Bloqueo manual de partidos ────────────────────────────────────────────────
+app.put('/api/partidos/:id/bloqueo', wrap(async (req, res) => {
+  await db.toggleBloqueoPartido(parseInt(req.params.id));
+  await broadcast();
+  res.json({ ok: true });
+}));
+
 // ── Predicciones ──────────────────────────────────────────────────────────────
 app.post('/api/predicciones', wrap(async (req, res) => {
   const { equipoId, partidoId, local, visita } = req.body;
-  if (await db.hasResultado(parseInt(partidoId))) {
-    return res.status(400).json({ error: 'Este partido ya fue jugado, no se puede predecir' });
+  if (await db.isPartidoBloqueado(parseInt(partidoId))) {
+    return res.status(400).json({ error: 'Este partido está bloqueado, no se puede predecir' });
   }
   await db.upsertPrediccion(parseInt(equipoId), parseInt(partidoId), parseInt(local), parseInt(visita));
   await broadcast();

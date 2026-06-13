@@ -570,6 +570,7 @@
           <button class="admin-tab" onclick="showAdminTab('bonos')">⭐ Bonos</button>
           <button class="admin-tab" onclick="showAdminTab('penalizaciones')">🚫 Penalizaciones</button>
           <button class="admin-tab" onclick="showAdminTab('prediccionesAdmin')">👁️ Ver Predicciones</button>
+          <button class="admin-tab" onclick="showAdminTab('sedes')">🏟️ Sedes</button>
         </div>
         <div id="adminEquipos" class="admin-panel active"></div>
         <div id="adminResultados" class="admin-panel"></div>
@@ -577,6 +578,7 @@
         <div id="adminBonos" class="admin-panel"></div>
         <div id="adminPenalizaciones" class="admin-panel"></div>
         <div id="adminPrediccionesAdmin" class="admin-panel"></div>
+        <div id="adminSedes" class="admin-panel"></div>
       </div>
     </div>
   </div>
@@ -585,47 +587,12 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    // ==================== PARTIDOS ====================
-    const PARTIDOS = [
-      { id: 1, grupo: 'A', fecha: '11/06/2026', local: 'México', visita: 'Sudáfrica' },
-      { id: 2, grupo: 'A', fecha: '11/06/2026', local: 'Corea del Sur', visita: 'República Checa' },
-      { id: 3, grupo: 'A', fecha: '18/06/2026', local: 'República Checa', visita: 'Sudáfrica' },
-      { id: 4, grupo: 'A', fecha: '18/06/2026', local: 'México', visita: 'Corea del Sur' },
-      { id: 5, grupo: 'A', fecha: '24/06/2026', local: 'República Checa', visita: 'México' },
-      { id: 6, grupo: 'A', fecha: '24/06/2026', local: 'Sudáfrica', visita: 'Corea del Sur' },
-      { id: 7, grupo: 'B', fecha: '12/06/2026', local: 'Canadá', visita: 'Bosnia' },
-      { id: 8, grupo: 'B', fecha: '13/06/2026', local: 'Catar', visita: 'Suiza' },
-      { id: 9, grupo: 'B', fecha: '18/06/2026', local: 'Suiza', visita: 'Bosnia' },
-      { id: 10, grupo: 'B', fecha: '18/06/2026', local: 'Canadá', visita: 'Catar' },
-      { id: 11, grupo: 'B', fecha: '24/06/2026', local: 'Suiza', visita: 'Canadá' },
-      { id: 12, grupo: 'B', fecha: '24/06/2026', local: 'Bosnia', visita: 'Catar' },
-      { id: 13, grupo: 'C', fecha: '13/06/2026', local: 'Brasil', visita: 'Marruecos' },
-      { id: 14, grupo: 'C', fecha: '13/06/2026', local: 'Haití', visita: 'Escocia' },
-      { id: 15, grupo: 'C', fecha: '19/06/2026', local: 'Escocia', visita: 'Marruecos' },
-      { id: 16, grupo: 'C', fecha: '19/06/2026', local: 'Brasil', visita: 'Haití' },
-      { id: 17, grupo: 'C', fecha: '24/06/2026', local: 'Escocia', visita: 'Brasil' },
-      { id: 18, grupo: 'C', fecha: '24/06/2026', local: 'Marruecos', visita: 'Haití' },
-      { id: 19, grupo: 'D', fecha: '12/06/2026', local: 'Estados Unidos', visita: 'Paraguay' },
-      { id: 20, grupo: 'D', fecha: '14/06/2026', local: 'Australia', visita: 'Turquía' },
-      { id: 21, grupo: 'D', fecha: '19/06/2026', local: 'Estados Unidos', visita: 'Australia' },
-      { id: 22, grupo: 'D', fecha: '20/06/2026', local: 'Turquía', visita: 'Paraguay' },
-      { id: 23, grupo: 'D', fecha: '25/06/2026', local: 'Turquía', visita: 'Estados Unidos' },
-      { id: 24, grupo: 'D', fecha: '25/06/2026', local: 'Paraguay', visita: 'Australia' },
-      { id: 25, grupo: 'E', fecha: '14/06/2026', local: 'Alemania', visita: 'Curazao' },
-      { id: 26, grupo: 'E', fecha: '14/06/2026', local: 'Costa de Marfil', visita: 'Ecuador' },
-      { id: 27, grupo: 'E', fecha: '20/06/2026', local: 'Alemania', visita: 'Costa de Marfil' },
-      { id: 28, grupo: 'E', fecha: '20/06/2026', local: 'Ecuador', visita: 'Curazao' },
-      { id: 29, grupo: 'E', fecha: '25/06/2026', local: 'Curazao', visita: 'Costa de Marfil' },
-      { id: 30, grupo: 'E', fecha: '25/06/2026', local: 'Ecuador', visita: 'Alemania' },
-      { id: 31, grupo: 'F', fecha: '14/06/2026', local: 'Países Bajos', visita: 'Japón' },
-      { id: 32, grupo: 'F', fecha: '14/06/2026', local: 'Suecia', visita: 'Túnez' },
-      { id: 33, grupo: 'F', fecha: '20/06/2026', local: 'Países Bajos', visita: 'Suecia' },
-      { id: 34, grupo: 'F', fecha: '20/06/2026', local: 'Túnez', visita: 'Japón' },
-      { id: 35, grupo: 'F', fecha: '25/06/2026', local: 'Japón', visita: 'Suecia' },
-      { id: 36, grupo: 'F', fecha: '25/06/2026', local: 'Túnez', visita: 'Países Bajos' }
-    ];
+    // Los partidos llegan del servidor via applyServerData → partidosData
+    // (incluye fecha, hora, bloqueado_efectivo calculados en Colombia UTC-5)
 
     // ==================== ESTADO =====================
+    let partidosData = [];   // array de partidos desde servidor (con fecha, hora, bloqueado_efectivo)
+    let sedes = [];
     let equipos = [];
     let resultados = {};
     let predicciones = {};
@@ -659,7 +626,9 @@
     }
 
     function applyServerData(data) {
+      sedes = (data.sedes || []).map(s => ({ ...s, activo: Boolean(s.activo) }));
       equipos = data.equipos.map(e => ({ ...e, activo: Boolean(e.activo) }));
+      partidosData = data.partidos || [];
 
       resultados = {};
       for (const r of data.resultados) resultados[r.partido_id] = { local: r.local, visita: r.visita };
@@ -691,6 +660,7 @@
         else if (currentAdminTab === 'bonos') renderAdminBonos();
         else if (currentAdminTab === 'penalizaciones') renderAdminPenalizaciones();
         else if (currentAdminTab === 'prediccionesAdmin') renderAdminPredicciones();
+        else if (currentAdminTab === 'sedes') renderAdminSedes();
       }
     }
 
@@ -729,7 +699,7 @@
         let puntosPrediccion = 0;
         let exactos = 0;
         const predsEquipo = predicciones[equipo.id] || {};
-        for (const partido of PARTIDOS) {
+        for (const partido of partidosData) {
           const resultado = resultados[partido.id];
           const prediccion = predsEquipo[partido.id];
           if (resultado && prediccion && prediccion.local !== undefined && prediccion.visita !== undefined) {
@@ -774,7 +744,7 @@
         </table>
       `;
 
-      const proximos = PARTIDOS.filter(p => !resultados[p.id]).slice(0, 5);
+      const proximos = partidosData.filter(p => !resultados[p.id]).slice(0, 5);
       document.getElementById('proximosPartidos').innerHTML = proximos.map(p => `
         <div class="partido-item">
           <div class="partido-equipos">
@@ -782,11 +752,11 @@
             <span class="vs">VS</span>
             <span class="equipo-visita">${p.visita}</span>
           </div>
-          <div style="font-size:0.7rem; color:#888; text-align:center; margin-top:5px">📅 ${p.fecha} · Grupo ${p.grupo}</div>
+          <div style="font-size:0.7rem; color:#888; text-align:center; margin-top:5px">📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · Grupo ${p.grupo}</div>
         </div>
       `).join('') || '<div style="text-align:center; padding:20px">✅ ¡Todos los partidos jugados!</div>';
 
-      const ultimos = PARTIDOS.filter(p => resultados[p.id]).slice(-5).reverse();
+      const ultimos = partidosData.filter(p => resultados[p.id]).slice(-5).reverse();
       document.getElementById('ultimosResultados').innerHTML = ultimos.map(p => `
         <div class="partido-item">
           <div class="partido-equipos">
@@ -815,7 +785,7 @@
       }
       const misPreds = predicciones[currentUser.id] || {};
       const grupos = {};
-      for (const p of PARTIDOS) {
+      for (const p of partidosData) {
         if (!grupos[p.grupo]) grupos[p.grupo] = [];
         grupos[p.grupo].push(p);
       }
@@ -825,16 +795,16 @@
         for (const p of grupos[grupo]) {
           const res = resultados[p.id];
           const pred = misPreds[p.id] || {};
-          const bloqueado = res !== undefined;
+          const bloqueado = p.bloqueado_efectivo === 1;
           html += `<div class="partido-item">
             <div class="partido-equipos">
               <span class="equipo-local">${p.local}</span>
               <span class="vs">VS</span>
               <span class="equipo-visita">${p.visita}</span>
             </div>
-            <div style="font-size:0.7rem; color:#888; text-align:center; margin:5px 0">📅 ${p.fecha} · Grupo ${p.grupo}</div>`;
+            <div style="font-size:0.7rem; color:#888; text-align:center; margin:5px 0">📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · Grupo ${p.grupo}</div>`;
           if (bloqueado) {
-            const pts = calcularPuntosPrediccion(pred.local, pred.visita, res.local, res.visita);
+            const pts = res ? calcularPuntosPrediccion(pred.local, pred.visita, res.local, res.visita) : null;
             html += `<div class="pred-resultado">
               🔒 Tu predicción: ${pred.local !== undefined ? pred.local : '?'} - ${pred.visita !== undefined ? pred.visita : '?'}<br>
               <span style="color: ${pts > 0 ? '#6c9ebf' : '#888'}">${pts !== null ? pts + ' puntos' : ''}</span>
@@ -924,8 +894,10 @@
             <button class="btn btn-danger" onclick="borrarTodosResultados()">🗑️ Reiniciar TODOS los resultados</button>
           </div>
       `;
-      for (const p of PARTIDOS) {
+      for (const p of partidosData) {
         const res = resultados[p.id] || {};
+        const bloqueadoManual = p.bloqueado === 1;
+        const bloqueadoEfectivo = p.bloqueado_efectivo === 1;
         html += `
           <div class="partido-item">
             <div class="partido-equipos">
@@ -939,8 +911,9 @@
               <input type="number" id="resV_${p.id}" class="resultado-input" value="${res.visita !== undefined ? res.visita : ''}" placeholder="0" min="0" max="20">
               <button class="btn btn-primary" onclick="guardarResultado(${p.id})">💾 ${res.local !== undefined ? 'Editar' : 'Guardar'}</button>
               ${res.local !== undefined ? `<button class="btn btn-danger" onclick="borrarResultado(${p.id})">🗑️</button>` : ''}
+              <button class="btn ${bloqueadoManual ? 'btn-warning' : 'btn-success'}" onclick="toggleBloqueo(${p.id})" title="${bloqueadoManual ? 'Desbloquear manualmente' : 'Bloquear manualmente'}">${bloqueadoEfectivo ? '🔒' : '🔓'} ${bloqueadoManual ? 'Desbloquear' : 'Bloquear'}</button>
             </div>
-            <div style="font-size:0.7rem; color:#888; text-align:center; margin-top:5px">📅 ${p.fecha} · Grupo ${p.grupo}</div>
+            <div style="font-size:0.7rem; color:#888; text-align:center; margin-top:5px">📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · Grupo ${p.grupo}</div>
           </div>
         `;
       }
@@ -1131,9 +1104,9 @@
           </div>`;
         if (cantidad > 0) {
           html += `<div style="font-size:0.8rem; color:#888;">`;
-          for (const p of PARTIDOS) {
+          for (const p of partidosData) {
             const pred = predsEquipo[p.id];
-            if (pred) html += `<div style="margin: 3px 0;">📅 ${p.fecha} - ${p.local} ${pred.local} vs ${pred.visita} ${p.visita}</div>`;
+            if (pred) html += `<div style="margin: 3px 0;">📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} - ${p.local} ${pred.local} vs ${pred.visita} ${p.visita}</div>`;
           }
           html += `</div>`;
         } else {
@@ -1143,6 +1116,55 @@
       }
       html += `</div>`;
       document.getElementById('adminPrediccionesAdmin').innerHTML = html;
+    }
+
+    async function toggleBloqueo(partidoId) {
+      await apiCall('PUT', `/api/partidos/${partidoId}/bloqueo`);
+      mostrarToast('🔒 Bloqueo actualizado');
+    }
+
+    // ==================== ADMIN - SEDES ====================
+    function renderAdminSedes() {
+      document.getElementById('adminSedes').innerHTML = `
+        <div class="card">
+          <div class="card-title">🏟️ Gestión de Sedes</div>
+          ${sedes.map(s => `
+            <div class="equipo-row">
+              <input type="text" id="sedeNombre_${s.id}" value="${s.nombre}" style="width:200px" placeholder="Nombre">
+              <input type="text" id="sedeSlug_${s.id}" value="${s.slug}" style="width:130px" placeholder="slug-identificador">
+              <span style="color: ${s.activo ? '#6c9ebf' : '#ff6b6b'}">${s.activo ? '✅ Activa' : '❌ Inactiva'}</span>
+              <button class="btn btn-primary" onclick="guardarSede(${s.id})">💾</button>
+              <button class="btn ${s.activo ? 'btn-danger' : 'btn-success'}" onclick="toggleSede(${s.id})">${s.activo ? '❌' : '✅'}</button>
+            </div>
+          `).join('')}
+          <hr style="margin: 1rem 0; border-color: rgba(192,192,192,0.2)">
+          <div class="equipo-row">
+            <input type="text" id="nuevaSedeNombre" placeholder="Nombre nueva sede" style="width:200px">
+            <input type="text" id="nuevaSedeSlug" placeholder="slug-nueva" style="width:130px">
+            <button class="btn btn-primary" onclick="agregarSede()">+ Agregar Sede</button>
+          </div>
+        </div>
+      `;
+    }
+
+    async function guardarSede(id) {
+      const nombre = document.getElementById(`sedeNombre_${id}`).value;
+      const slug = document.getElementById(`sedeSlug_${id}`).value;
+      await apiCall('PUT', `/api/sedes/${id}`, { nombre, slug });
+      mostrarToast('✅ Sede actualizada');
+    }
+
+    async function toggleSede(id) {
+      await apiCall('PUT', `/api/sedes/${id}/toggle`);
+      mostrarToast('🏟️ Estado de sede actualizado');
+    }
+
+    async function agregarSede() {
+      const nombre = document.getElementById('nuevaSedeNombre').value;
+      const slug = document.getElementById('nuevaSedeSlug').value;
+      if (!nombre || !slug) { mostrarToast('❌ Ingresa nombre y slug', 'error'); return; }
+      await apiCall('POST', '/api/sedes', { nombre, slug });
+      mostrarToast('➕ Sede agregada');
     }
 
     async function borrarPrediccionesEquipo(equipoId) {
@@ -1174,7 +1196,8 @@
         adherencia:       ['adminAdherencia',         renderAdminAdherencia],
         bonos:            ['adminBonos',              renderAdminBonos],
         penalizaciones:   ['adminPenalizaciones',     renderAdminPenalizaciones],
-        prediccionesAdmin:['adminPrediccionesAdmin',  renderAdminPredicciones]
+        prediccionesAdmin:['adminPrediccionesAdmin',  renderAdminPredicciones],
+        sedes:            ['adminSedes',              renderAdminSedes]
       };
       if (tabEls[tab]) {
         document.querySelector(`.admin-tab[onclick*="${tab}"]`).classList.add('active');
@@ -1278,6 +1301,10 @@
     window.eliminarPenalizacion = eliminarPenalizacion;
     window.togglePenPersonalizado = togglePenPersonalizado;
     window.borrarPrediccionesEquipo = borrarPrediccionesEquipo;
+    window.toggleBloqueo = toggleBloqueo;
+    window.guardarSede = guardarSede;
+    window.toggleSede = toggleSede;
+    window.agregarSede = agregarSede;
     window.showPage = showPage;
     window.showAdminTab = showAdminTab;
     window.doLogin = doLogin;
