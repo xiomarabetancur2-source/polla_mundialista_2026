@@ -1336,14 +1336,14 @@
       `).join('');
     }
 
-    // Devuelve equipos/partidos filtrados por la sede del usuario actual
+    // Los partidos son globales (los mismos 72 para todas las sedes).
+    // Solo los equipos en el ranking se filtran por sede.
     function getEquiposDeSede() {
       if (!currentUser || currentUser.isAdmin || !currentUser.sedeId) return equipos;
       return equipos.filter(e => e.sede_id === currentUser.sedeId);
     }
     function getPartidosDeSede() {
-      if (!currentUser || currentUser.isAdmin || !currentUser.sedeId) return partidosData;
-      return partidosData.filter(p => p.sede_id === currentUser.sedeId);
+      return partidosData; // globales, no se filtran por sede
     }
 
     function cargarSedesLogin() {
