@@ -365,12 +365,26 @@ async function initDB() {
     if (ec === 0) {
       const { rows: [sedeRow] } = await client.query("SELECT id FROM sedes WHERE slug='gca-cali'");
       const sedeId = sedeRow ? sedeRow.id : 1;
-      for (let i = 1; i <= 10; i++) {
+      const equiposSeed = [
+        [1, 'Las Romperredes',         '1111'],
+        [2, 'Titanes FC',              '2222'],
+        [3, 'Los Elegidos',            '3333'],
+        [4, 'Los Alcones',             '4444'],
+        [5, 'El Combo',                '5555'],
+        [6, 'Furia del Gol',           '6666'],
+        [7, 'Aficionadas VIP',         '7777'],
+        [8, 'Golden Team',             '8888'],
+        [9, 'Los Dueños del Mundial',  '9999'],
+        [10,'Fenix FC',                '0000']
+      ];
+      for (const [id, nombre, pin] of equiposSeed) {
         await client.query(
-          'INSERT INTO equipos (nombre,pin,activo,sede_id) VALUES ($1,$2,1,$3)',
-          [`Equipo ${i}`, i === 10 ? '0000' : String(i).repeat(4), sedeId]
+          'INSERT INTO equipos (id,nombre,pin,activo,sede_id) VALUES ($1,$2,$3,1,$4)',
+          [id, nombre, pin, sedeId]
         );
       }
+      // Sincronizar secuencia SERIAL con el máximo ID insertado
+      await client.query("SELECT setval('equipos_id_seq', (SELECT MAX(id) FROM equipos))");
     }
 
     await client.query('COMMIT');
