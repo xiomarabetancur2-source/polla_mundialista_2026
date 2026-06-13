@@ -116,6 +116,20 @@ app.put('/api/partidos/:id/bloqueo', wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── Predicciones (Admin — sin restricción de bloqueo) ────────────────────────
+app.post('/api/admin/predicciones', wrap(async (req, res) => {
+  const { equipoId, partidoId, local, visita } = req.body;
+  await db.upsertPrediccion(parseInt(equipoId), parseInt(partidoId), parseInt(local), parseInt(visita));
+  await broadcast();
+  res.json({ ok: true });
+}));
+
+app.delete('/api/admin/predicciones/:equipoId/:partidoId', wrap(async (req, res) => {
+  await db.deletePrediccion(parseInt(req.params.equipoId), parseInt(req.params.partidoId));
+  await broadcast();
+  res.json({ ok: true });
+}));
+
 // ── Predicciones ──────────────────────────────────────────────────────────────
 app.post('/api/predicciones', wrap(async (req, res) => {
   const { equipoId, partidoId, local, visita } = req.body;

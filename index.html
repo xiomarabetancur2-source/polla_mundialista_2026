@@ -1130,33 +1130,92 @@
       mostrarToast('🗑️ Penalización eliminada');
     }
 
-    // ==================== ADMIN - VER PREDICCIONES ====================
+    // ==================== ADMIN - PREDICCIONES EDITABLES ====================
     function renderAdminPredicciones() {
-      let html = `<div class="card"><div class="card-title">👁️ Ver Predicciones de los Equipos</div>`;
-      for (const equipo of equipos) {
-        if (!equipo.activo) continue;
-        const predsEquipo = predicciones[equipo.id] || {};
-        const cantidad = Object.keys(predsEquipo).length;
-        html += `<div class="partido-item" style="margin-bottom: 1rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
-            <strong style="color:#c0c0c0">${equipo.nombre}</strong>
-            <span style="color:#888">${cantidad} predicciones realizadas</span>
-            <button class="btn btn-danger" onclick="borrarPrediccionesEquipo(${equipo.id})">🗑️ Borrar todas</button>
-          </div>`;
-        if (cantidad > 0) {
-          html += `<div style="font-size:0.8rem; color:#888;">`;
-          for (const p of partidosData) {
-            const pred = predsEquipo[p.id];
-            if (pred) html += `<div style="margin: 3px 0;">📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} - ${p.local} ${pred.local} vs ${pred.visita} ${p.visita}</div>`;
-          }
-          html += `</div>`;
-        } else {
-          html += `<div style="color:#888; font-size:0.8rem;">Sin predicciones aún</div>`;
-        }
-        html += `</div>`;
+      const selActual = document.getElementById('adminPredEqSel')?.value || '';
+      const selectedEqId = parseInt(selActual) || 0;
+      const predsEquipo = selectedEqId ? (predicciones[selectedEqId] || {}) : {};
+
+      const grupos = {};
+      for (const p of partidosData) {
+        if (!grupos[p.grupo]) grupos[p.grupo] = [];
+        grupos[p.grupo].push(p);
       }
+
+      let html = `
+        <div class="card">
+          <div class="card-title">✏️ Predicciones — Admin (sin restricciones)</div>
+          <div style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
+            <label style="font-size:0.85rem">Equipo:</label>
+            <select id="adminPredEqSel" onchange="renderAdminPredicciones()"
+              style="padding:5px 10px; background:rgba(13,33,55,0.8); border:1px solid rgba(192,192,192,0.3); border-radius:6px; color:white; min-width:180px">
+              <option value="">-- Seleccionar equipo --</option>
+              ${equipos.filter(e => e.activo).map(e =>
+                `<option value="${e.id}" ${e.id === selectedEqId ? 'selected' : ''}>${e.nombre}</option>`
+              ).join('')}
+            </select>
+            ${selectedEqId ? `<button class="btn btn-danger" onclick="borrarPrediccionesEquipo(${selectedEqId})">🗑️ Borrar TODAS</button>` : ''}
+          </div>`;
+
+      if (!selectedEqId) {
+        html += `<div style="text-align:center; padding:2rem; color:#888">Selecciona un equipo para ver y editar sus predicciones</div>`;
+      } else {
+        html += `<div style="font-size:0.75rem; color:#ff9800; margin-bottom:0.8rem; padding:6px 10px; background:rgba(255,152,0,0.1); border-radius:6px; border:1px solid rgba(255,152,0,0.3)">
+          ⚡ Modo Admin: puedes editar cualquier predicción sin importar si el partido está bloqueado o ya tiene resultado
+        </div>`;
+        for (const grupo of Object.keys(grupos).sort()) {
+          html += `<div class="grupo-titulo">🏳️ Grupo ${grupo}</div>`;
+          for (const p of grupos[grupo]) {
+            const pred = predsEquipo[p.id] || {};
+            const bloqueado = p.bloqueado_efectivo === 1;
+            const res = resultados[p.id];
+            html += `
+              <div class="partido-item">
+                <div class="partido-equipos">
+                  <span class="equipo-local">${p.local}</span>
+                  <span class="vs">${bloqueado ? '🔒' : '🔓'} VS</span>
+                  <span class="equipo-visita">${p.visita}</span>
+                </div>
+                <div style="font-size:0.7rem; color:#888; text-align:center; margin:4px 0">
+                  📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · Grupo ${p.grupo}
+                  ${res ? ` · <span style="color:#6c9ebf">Real: ${res.local}-${res.visita}</span>` : ''}
+                </div>
+                <div class="pred-inputs">
+                  <input type="number" id="adminPredL_${selectedEqId}_${p.id}"
+                    value="${pred.local !== undefined ? pred.local : ''}" placeholder="0" min="0" max="20">
+                  <span>-</span>
+                  <input type="number" id="adminPredV_${selectedEqId}_${p.id}"
+                    value="${pred.visita !== undefined ? pred.visita : ''}" placeholder="0" min="0" max="20">
+                  <button class="btn btn-primary" onclick="adminGuardarPrediccion(${selectedEqId}, ${p.id})">💾</button>
+                  ${pred.local !== undefined
+                    ? `<button class="btn btn-danger" style="padding:4px 8px; font-size:0.75rem" onclick="adminBorrarPrediccion(${selectedEqId}, ${p.id})">🗑️</button>`
+                    : ''}
+                </div>
+              </div>`;
+          }
+        }
+      }
+
       html += `</div>`;
       document.getElementById('adminPrediccionesAdmin').innerHTML = html;
+    }
+
+    async function adminGuardarPrediccion(equipoId, partidoId) {
+      const localEl  = document.getElementById(`adminPredL_${equipoId}_${partidoId}`);
+      const visitaEl = document.getElementById(`adminPredV_${equipoId}_${partidoId}`);
+      if (!localEl || !visitaEl || localEl.value === '' || visitaEl.value === '') {
+        mostrarToast('❌ Ingresa ambos marcadores', 'error'); return;
+      }
+      const res = await apiCall('POST', '/api/admin/predicciones',
+        { equipoId, partidoId, local: parseInt(localEl.value), visita: parseInt(visitaEl.value) });
+      if (res.error) mostrarToast('❌ ' + res.error, 'error');
+      else mostrarToast('✅ Predicción guardada');
+    }
+
+    async function adminBorrarPrediccion(equipoId, partidoId) {
+      const res = await apiCall('DELETE', `/api/admin/predicciones/${equipoId}/${partidoId}`);
+      if (res.error) mostrarToast('❌ ' + res.error, 'error');
+      else mostrarToast('🗑️ Predicción eliminada');
     }
 
     async function toggleBloqueo(partidoId) {
@@ -1391,6 +1450,8 @@
     window.eliminarPenalizacion = eliminarPenalizacion;
     window.togglePenPersonalizado = togglePenPersonalizado;
     window.borrarPrediccionesEquipo = borrarPrediccionesEquipo;
+    window.adminGuardarPrediccion = adminGuardarPrediccion;
+    window.adminBorrarPrediccion = adminBorrarPrediccion;
     window.toggleBloqueo = toggleBloqueo;
     window.guardarSede = guardarSede;
     window.toggleSede = toggleSede;
