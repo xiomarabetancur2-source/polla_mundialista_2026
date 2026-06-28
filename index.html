@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>⚽ Mundialito GCA 2026 - GCA Technologies</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flag-icons@7.2.3/css/flag-icons.min.css">
   <style>
     * {
       margin: 0;
@@ -82,7 +83,7 @@
     .bm-team { display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-bottom: 1px solid rgba(192,192,192,0.1); }
     .bm-team:last-child { border-bottom: none; }
     .bm-team.winner { background: rgba(108,158,191,0.15); color: #c0c0c0; font-weight: bold; }
-    .bm-flag { font-size: 0.9rem; flex-shrink: 0; }
+    .bm-flag { flex-shrink: 0; line-height: 1; }
     .bm-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #c0c0c0; }
     .bm-score { font-weight: bold; color: #6c9ebf; min-width: 14px; text-align: center; }
     .bm-tbd .bm-name { color: #666; font-style: italic; }
@@ -635,22 +636,25 @@
   <script>
     // ==================== BANDERAS ====================
     const BANDERAS = {
-      'México':'🇲🇽','Sudáfrica':'🇿🇦','Corea del Sur':'🇰🇷','República Checa':'🇨🇿',
-      'Canadá':'🇨🇦','Bosnia':'🇧🇦','Catar':'🇶🇦','Suiza':'🇨🇭',
-      'Brasil':'🇧🇷','Marruecos':'🇲🇦','Haití':'🇭🇹','Escocia':'🏴󠁧󠁢󠁳󠁣󠁴󠁿',
-      'Estados Unidos':'🇺🇸','Paraguay':'🇵🇾','Australia':'🇦🇺','Turquía':'🇹🇷',
-      'Alemania':'🇩🇪','Curazao':'🇨🇼','Costa de Marfil':'🇨🇮','Ecuador':'🇪🇨',
-      'Países Bajos':'🇳🇱','Japón':'🇯🇵','Suecia':'🇸🇪','Túnez':'🇹🇳',
-      'Bélgica':'🇧🇪','Egipto':'🇪🇬','Irán':'🇮🇷','Nueva Zelanda':'🇳🇿',
-      'España':'🇪🇸','Cabo Verde':'🇨🇻','Arabia Saudita':'🇸🇦','Uruguay':'🇺🇾',
-      'Francia':'🇫🇷','Senegal':'🇸🇳','Irak':'🇮🇶','Noruega':'🇳🇴',
-      'Argentina':'🇦🇷','Argelia':'🇩🇿','Austria':'🇦🇹','Jordania':'🇯🇴',
-      'Portugal':'🇵🇹','República Democrática del Congo':'🇨🇩',
-      'Inglaterra':'🏴󠁧󠁢󠁥󠁮󠁧󠁿','Croacia':'🇭🇷',
-      'Ghana':'🇬🇭','Panamá':'🇵🇦','Uzbekistán':'🇺🇿','Colombia':'🇨🇴',
-      'Por definir':'❓'
+      'México':'mx','Sudáfrica':'za','Corea del Sur':'kr','República Checa':'cz',
+      'Canadá':'ca','Bosnia':'ba','Catar':'qa','Suiza':'ch',
+      'Brasil':'br','Marruecos':'ma','Haití':'ht','Escocia':'gb-sct',
+      'Estados Unidos':'us','Paraguay':'py','Australia':'au','Turquía':'tr',
+      'Alemania':'de','Curazao':'cw','Costa de Marfil':'ci','Ecuador':'ec',
+      'Países Bajos':'nl','Japón':'jp','Suecia':'se','Túnez':'tn',
+      'Bélgica':'be','Egipto':'eg','Irán':'ir','Nueva Zelanda':'nz',
+      'España':'es','Cabo Verde':'cv','Arabia Saudita':'sa','Uruguay':'uy',
+      'Francia':'fr','Senegal':'sn','Irak':'iq','Noruega':'no',
+      'Argentina':'ar','Argelia':'dz','Austria':'at','Jordania':'jo',
+      'Portugal':'pt','República Democrática del Congo':'cd',
+      'Inglaterra':'gb-eng','Croacia':'hr',
+      'Ghana':'gh','Panamá':'pa','Uzbekistán':'uz','Colombia':'co'
     };
-    function bandera(nombre) { return BANDERAS[nombre] || '🏳️'; }
+    function bandera(nombre) {
+      const code = BANDERAS[nombre];
+      if (!code) return '';
+      return `<span class="fi fi-${code}" style="font-size:1.1em;vertical-align:middle"></span>`;
+    }
 
     // ==================== ESTADO =====================
     let partidosData = [];   // array de partidos desde servidor (con fecha, hora, bloqueado_efectivo)
