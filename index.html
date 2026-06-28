@@ -72,6 +72,26 @@
     }
     .error { color: #ff6b6b; margin-top: 10px; display: none; }
 
+    /* Bracket / Fixture */
+    .bracket-wrapper { overflow-x: auto; padding: 1rem 0; }
+    .bracket { display: flex; align-items: stretch; min-width: 1100px; gap: 0; }
+    .bracket-round { display: flex; flex-direction: column; justify-content: space-around; flex: 1; min-width: 110px; padding: 0 2px; }
+    .bracket-round-title { text-align: center; font-size: 0.65rem; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; font-weight: bold; }
+    .bm { background: rgba(13,33,55,0.7); border: 1px solid rgba(192,192,192,0.2); border-radius: 6px; margin: 3px 0; overflow: hidden; font-size: 0.72rem; }
+    .bm.played { border-color: rgba(108,158,191,0.5); }
+    .bm-team { display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-bottom: 1px solid rgba(192,192,192,0.1); }
+    .bm-team:last-child { border-bottom: none; }
+    .bm-team.winner { background: rgba(108,158,191,0.15); color: #c0c0c0; font-weight: bold; }
+    .bm-flag { font-size: 0.9rem; flex-shrink: 0; }
+    .bm-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #c0c0c0; }
+    .bm-score { font-weight: bold; color: #6c9ebf; min-width: 14px; text-align: center; }
+    .bm-tbd .bm-name { color: #666; font-style: italic; }
+    .bracket-final-label { text-align: center; font-size: 1.1rem; color: #c0c0c0; font-weight: bold; margin-bottom: 8px; }
+    @media (max-width: 900px) {
+      .bracket { flex-direction: column; min-width: unset; gap: 1rem; }
+      .bracket-round { min-width: unset; }
+    }
+
     /* App Header - Colores GCA */
     .app-header {
       background: linear-gradient(135deg, #0d2137, #1a3a5c);
@@ -521,6 +541,7 @@
       <div class="nav-buttons">
         <button class="nav-btn active" onclick="showPage('dashboard')">📊 Dashboard</button>
         <button class="nav-btn" onclick="showPage('predicciones')">🎯 Predicciones</button>
+        <button class="nav-btn" onclick="showPage('fixture')">🏆 Fixture</button>
         <button id="adminBtn" class="nav-btn" style="display: none;" onclick="showPage('admin')">⚙️ Admin</button>
       </div>
       <div class="user-info">
@@ -564,6 +585,14 @@
         </div>
       </div>
 
+      <!-- Fixture / Bracket -->
+      <div id="pageFixture" class="page">
+        <div class="card">
+          <div class="card-title">🏆 Fixture — Eliminación Directa</div>
+          <div id="fixtureContent"></div>
+        </div>
+      </div>
+
       <!-- Admin (solo para administrador) -->
       <div id="pageAdmin" class="page">
         <div class="admin-tabs">
@@ -590,8 +619,24 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    // Los partidos llegan del servidor via applyServerData → partidosData
-    // (incluye fecha, hora, bloqueado_efectivo calculados en Colombia UTC-5)
+    // ==================== BANDERAS ====================
+    const BANDERAS = {
+      'México':'🇲🇽','Sudáfrica':'🇿🇦','Corea del Sur':'🇰🇷','República Checa':'🇨🇿',
+      'Canadá':'🇨🇦','Bosnia':'🇧🇦','Catar':'🇶🇦','Suiza':'🇨🇭',
+      'Brasil':'🇧🇷','Marruecos':'🇲🇦','Haití':'🇭🇹','Escocia':'🏴󠁧󠁢󠁳󠁣󠁴󠁿',
+      'Estados Unidos':'🇺🇸','Paraguay':'🇵🇾','Australia':'🇦🇺','Turquía':'🇹🇷',
+      'Alemania':'🇩🇪','Curazao':'🇨🇼','Costa de Marfil':'🇨🇮','Ecuador':'🇪🇨',
+      'Países Bajos':'🇳🇱','Japón':'🇯🇵','Suecia':'🇸🇪','Túnez':'🇹🇳',
+      'Bélgica':'🇧🇪','Egipto':'🇪🇬','Irán':'🇮🇷','Nueva Zelanda':'🇳🇿',
+      'España':'🇪🇸','Cabo Verde':'🇨🇻','Arabia Saudita':'🇸🇦','Uruguay':'🇺🇾',
+      'Francia':'🇫🇷','Senegal':'🇸🇳','Irak':'🇮🇶','Noruega':'🇳🇴',
+      'Argentina':'🇦🇷','Argelia':'🇩🇿','Austria':'🇦🇹','Jordania':'🇯🇴',
+      'Portugal':'🇵🇹','República Democrática del Congo':'🇨🇩',
+      'Inglaterra':'🏴󠁧󠁢󠁥󠁮󠁧󠁿','Croacia':'🇭🇷',
+      'Ghana':'🇬🇭','Panamá':'🇵🇦','Uzbekistán':'🇺🇿','Colombia':'🇨🇴',
+      'Por definir':'❓'
+    };
+    function bandera(nombre) { return BANDERAS[nombre] || '🏳️'; }
 
     // ==================== ESTADO =====================
     let partidosData = [];   // array de partidos desde servidor (con fecha, hora, bloqueado_efectivo)
@@ -656,6 +701,7 @@
       if (!currentUser) return;
       if (document.getElementById('pageDashboard').classList.contains('active')) renderDashboard();
       if (document.getElementById('pagePredicciones').classList.contains('active')) renderPredicciones();
+      if (document.getElementById('pageFixture').classList.contains('active')) renderFixture();
       if (document.getElementById('pageAdmin').classList.contains('active') && currentUser.isAdmin) {
         if (currentAdminTab === 'equipos') renderAdminEquipos();
         else if (currentAdminTab === 'resultados') renderAdminResultados();
@@ -749,15 +795,16 @@
       `;
 
       const misPartidos = getPartidosDeSede();
-      const proximos = misPartidos.filter(p => !resultados[p.id]).slice(0, 5);
+      const faseLabel = p => p.fase === 'grupos' ? `Grupo ${p.grupo}` : p.fase.charAt(0).toUpperCase() + p.fase.slice(1);
+      const proximos = misPartidos.filter(p => !resultados[p.id] && p.local !== 'Por definir' && p.visita !== 'Por definir').slice(0, 5);
       document.getElementById('proximosPartidos').innerHTML = proximos.map(p => `
         <div class="partido-item">
           <div class="partido-equipos">
-            <span class="equipo-local">${p.local}</span>
+            <span class="equipo-local">${bandera(p.local)} ${p.local}</span>
             <span class="vs">VS</span>
-            <span class="equipo-visita">${p.visita}</span>
+            <span class="equipo-visita">${bandera(p.visita)} ${p.visita}</span>
           </div>
-          <div style="font-size:0.7rem; color:#888; text-align:center; margin-top:5px">📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · Grupo ${p.grupo}</div>
+          <div style="font-size:0.7rem; color:#888; text-align:center; margin-top:5px">📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · ${faseLabel(p)}</div>
         </div>
       `).join('') || '<div style="text-align:center; padding:20px">✅ ¡Todos los partidos jugados!</div>';
 
@@ -765,11 +812,11 @@
       document.getElementById('ultimosResultados').innerHTML = ultimos.map(p => `
         <div class="partido-item">
           <div class="partido-equipos">
-            <span class="equipo-local">${p.local}</span>
+            <span class="equipo-local">${bandera(p.local)} ${p.local}</span>
             <span class="vs">${resultados[p.id].local} - ${resultados[p.id].visita}</span>
-            <span class="equipo-visita">${p.visita}</span>
+            <span class="equipo-visita">${bandera(p.visita)} ${p.visita}</span>
           </div>
-          <div style="font-size:0.7rem; color:#888; text-align:center; margin-top:5px">📅 ${p.fecha}</div>
+          <div style="font-size:0.7rem; color:#888; text-align:center; margin-top:5px">📅 ${p.fecha} · ${faseLabel(p)}</div>
         </div>
       `).join('') || '<div style="text-align:center; padding:20px">📋 Sin resultados aún</div>';
 
@@ -783,49 +830,84 @@
     }
 
     // ==================== PREDICCIONES ====================
+    const FASES_ORDER = { 'grupos':0, '16vos':1, 'octavos':2, 'cuartos':3, 'semifinal':4, 'final':5 };
+    const FASES_LABEL = { 'grupos':'Grupo', '16vos':'16vos de Final', 'octavos':'Octavos de Final', 'cuartos':'Cuartos de Final', 'semifinal':'Semifinal', 'final':'🏆 Final' };
+
     function renderPredicciones() {
       if (!currentUser || currentUser.isAdmin) {
         document.getElementById('prediccionesList').innerHTML = '<div style="text-align:center; padding:20px">🔒 Inicia sesión para hacer tus predicciones</div>';
         return;
       }
       const misPreds = predicciones[currentUser.id] || {};
-      const grupos = {};
-      for (const p of getPartidosDeSede()) {
-        if (!grupos[p.grupo]) grupos[p.grupo] = [];
-        grupos[p.grupo].push(p);
-      }
-      let html = '';
-      for (const grupo of Object.keys(grupos).sort()) {
-        html += `<div class="grupo-titulo">🏳️ Grupo ${grupo}</div>`;
-        for (const p of grupos[grupo]) {
-          const res = resultados[p.id];
-          const pred = misPreds[p.id] || {};
-          const bloqueado = p.bloqueado_efectivo === 1;
-          html += `<div class="partido-item">
-            <div class="partido-equipos">
-              <span class="equipo-local">${p.local}</span>
-              <span class="vs">VS</span>
-              <span class="equipo-visita">${p.visita}</span>
-            </div>
-            <div style="font-size:0.7rem; color:#888; text-align:center; margin:5px 0">📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · Grupo ${p.grupo}</div>`;
-          if (bloqueado) {
-            const pts = res ? calcularPuntosPrediccion(pred.local, pred.visita, res.local, res.visita) : null;
-            html += `<div class="pred-resultado">
-              🔒 Tu predicción: ${pred.local !== undefined ? pred.local : '?'} - ${pred.visita !== undefined ? pred.visita : '?'}<br>
-              <span style="color: ${pts > 0 ? '#6c9ebf' : '#888'}">${pts !== null ? pts + ' puntos' : ''}</span>
-            </div>`;
-          } else {
-            html += `<div class="pred-inputs">
-              <input type="number" id="predL_${p.id}" value="${pred.local !== undefined ? pred.local : ''}" placeholder="0" min="0" max="20" onchange="guardarPrediccion(${p.id})">
-              <span>-</span>
-              <input type="number" id="predV_${p.id}" value="${pred.visita !== undefined ? pred.visita : ''}" placeholder="0" min="0" max="20" onchange="guardarPrediccion(${p.id})">
-              <button class="btn-borrar-pred" onclick="borrarPrediccion(${p.id})" title="Borrar predicción">🗑️</button>
-            </div>`;
-          }
-          html += `</div>`;
+      const allPartidos = getPartidosDeSede();
+
+      // Agrupar: fase de grupos por grupo, knockout por fase
+      const gruposMap = {};
+      const knockoutMap = {};
+      for (const p of allPartidos) {
+        const fase = p.fase || 'grupos';
+        if (fase === 'grupos') {
+          if (!gruposMap[p.grupo]) gruposMap[p.grupo] = [];
+          gruposMap[p.grupo].push(p);
+        } else {
+          if (p.local === 'Por definir' || p.visita === 'Por definir') continue;
+          if (!knockoutMap[fase]) knockoutMap[fase] = [];
+          knockoutMap[fase].push(p);
         }
       }
+
+      let html = '';
+
+      // Fase de grupos
+      for (const grupo of Object.keys(gruposMap).sort()) {
+        html += `<div class="grupo-titulo">🏳️ Grupo ${grupo}</div>`;
+        for (const p of gruposMap[grupo]) {
+          html += renderPrediccionPartido(p, misPreds);
+        }
+      }
+
+      // Knockout
+      for (const fase of ['16vos','octavos','cuartos','semifinal','final']) {
+        if (!knockoutMap[fase] || !knockoutMap[fase].length) continue;
+        html += `<div class="grupo-titulo">🏆 ${FASES_LABEL[fase]}</div>`;
+        for (const p of knockoutMap[fase]) {
+          html += renderPrediccionPartido(p, misPreds);
+        }
+      }
+
       document.getElementById('prediccionesList').innerHTML = html;
+    }
+
+    function renderPrediccionPartido(p, misPreds) {
+      const res = resultados[p.id];
+      const pred = misPreds[p.id] || {};
+      const bloqueado = p.bloqueado_efectivo === 1;
+      const fase = p.fase || 'grupos';
+      const etiqueta = fase === 'grupos' ? `Grupo ${p.grupo}` : FASES_LABEL[fase];
+
+      let html = `<div class="partido-item">
+        <div class="partido-equipos">
+          <span class="equipo-local">${bandera(p.local)} ${p.local}</span>
+          <span class="vs">VS</span>
+          <span class="equipo-visita">${bandera(p.visita)} ${p.visita}</span>
+        </div>
+        <div style="font-size:0.7rem; color:#888; text-align:center; margin:5px 0">📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · ${etiqueta}</div>`;
+      if (bloqueado) {
+        const pts = res ? calcularPuntosPrediccion(pred.local, pred.visita, res.local, res.visita) : null;
+        html += `<div class="pred-resultado">
+          🔒 Tu predicción: ${pred.local !== undefined ? pred.local : '?'} - ${pred.visita !== undefined ? pred.visita : '?'}<br>
+          <span style="color: ${pts > 0 ? '#6c9ebf' : '#888'}">${pts !== null ? pts + ' puntos' : ''}</span>
+        </div>`;
+      } else {
+        html += `<div class="pred-inputs">
+          <input type="number" id="predL_${p.id}" value="${pred.local !== undefined ? pred.local : ''}" placeholder="0" min="0" max="20" onchange="guardarPrediccion(${p.id})">
+          <span>-</span>
+          <input type="number" id="predV_${p.id}" value="${pred.visita !== undefined ? pred.visita : ''}" placeholder="0" min="0" max="20" onchange="guardarPrediccion(${p.id})">
+          <button class="btn-borrar-pred" onclick="borrarPrediccion(${p.id})" title="Borrar predicción">🗑️</button>
+        </div>`;
+      }
+      html += `</div>`;
+      return html;
     }
 
     async function guardarPrediccion(partidoId) {
@@ -935,31 +1017,64 @@
             <button class="btn btn-danger" onclick="borrarTodosResultados()">🗑️ Reiniciar TODOS los resultados</button>
           </div>
       `;
+
+      // Agrupar partidos
+      const gruposMap = {};
+      const knockoutMap = {};
       for (const p of partidosData) {
-        const res = resultados[p.id] || {};
-        const bloqueadoManual = p.bloqueado === 1;
-        const bloqueadoEfectivo = p.bloqueado_efectivo === 1;
-        html += `
-          <div class="partido-item">
-            <div class="partido-equipos">
-              <span class="equipo-local"><strong>${p.local}</strong></span>
-              <span class="vs">VS</span>
-              <span class="equipo-visita"><strong>${p.visita}</strong></span>
-            </div>
-            <div style="display:flex; justify-content:center; gap:0.5rem; margin-top:0.5rem; flex-wrap:wrap">
-              <input type="number" id="resL_${p.id}" class="resultado-input" value="${res.local !== undefined ? res.local : ''}" placeholder="0" min="0" max="20">
-              <span>-</span>
-              <input type="number" id="resV_${p.id}" class="resultado-input" value="${res.visita !== undefined ? res.visita : ''}" placeholder="0" min="0" max="20">
-              <button class="btn btn-primary" onclick="guardarResultado(${p.id})">💾 ${res.local !== undefined ? 'Editar' : 'Guardar'}</button>
-              ${res.local !== undefined ? `<button class="btn btn-danger" onclick="borrarResultado(${p.id})">🗑️</button>` : ''}
-              <button class="btn ${bloqueadoManual ? 'btn-warning' : 'btn-success'}" onclick="toggleBloqueo(${p.id})" title="${bloqueadoManual ? 'Desbloquear manualmente' : 'Bloquear manualmente'}">${bloqueadoEfectivo ? '🔒' : '🔓'} ${bloqueadoManual ? 'Desbloquear' : 'Bloquear'}</button>
-            </div>
-            <div style="font-size:0.7rem; color:#888; text-align:center; margin-top:5px">📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · Grupo ${p.grupo}</div>
-          </div>
-        `;
+        const fase = p.fase || 'grupos';
+        if (fase === 'grupos') {
+          if (!gruposMap[p.grupo]) gruposMap[p.grupo] = [];
+          gruposMap[p.grupo].push(p);
+        } else {
+          if (!knockoutMap[fase]) knockoutMap[fase] = [];
+          knockoutMap[fase].push(p);
+        }
       }
+
+      // Fase de grupos
+      for (const grupo of Object.keys(gruposMap).sort()) {
+        html += `<div class="grupo-titulo">🏳️ Grupo ${grupo}</div>`;
+        for (const p of gruposMap[grupo]) html += renderAdminResultadoPartido(p);
+      }
+
+      // Knockout
+      for (const fase of ['16vos','octavos','cuartos','semifinal','final']) {
+        if (!knockoutMap[fase] || !knockoutMap[fase].length) continue;
+        html += `<div class="grupo-titulo">🏆 ${FASES_LABEL[fase]}</div>`;
+        for (const p of knockoutMap[fase]) html += renderAdminResultadoPartido(p);
+      }
+
       html += `</div>`;
       document.getElementById('adminResultados').innerHTML = html;
+    }
+
+    function renderAdminResultadoPartido(p) {
+      const res = resultados[p.id] || {};
+      const bloqueadoManual = p.bloqueado === 1;
+      const bloqueadoEfectivo = p.bloqueado_efectivo === 1;
+      const fase = p.fase || 'grupos';
+      const etiqueta = fase === 'grupos' ? `Grupo ${p.grupo}` : FASES_LABEL[fase];
+      const tbd = p.local === 'Por definir' || p.visita === 'Por definir';
+      return `
+        <div class="partido-item" ${tbd ? 'style="opacity:0.5"' : ''}>
+          <div class="partido-equipos">
+            <span class="equipo-local"><strong>${bandera(p.local)} ${p.local}</strong></span>
+            <span class="vs">VS</span>
+            <span class="equipo-visita"><strong>${bandera(p.visita)} ${p.visita}</strong></span>
+          </div>
+          ${tbd ? '<div style="font-size:0.7rem;color:#888;text-align:center;margin-top:5px">⏳ Equipos por definir</div>' : `
+          <div style="display:flex; justify-content:center; gap:0.5rem; margin-top:0.5rem; flex-wrap:wrap">
+            <input type="number" id="resL_${p.id}" class="resultado-input" value="${res.local !== undefined ? res.local : ''}" placeholder="0" min="0" max="20">
+            <span>-</span>
+            <input type="number" id="resV_${p.id}" class="resultado-input" value="${res.visita !== undefined ? res.visita : ''}" placeholder="0" min="0" max="20">
+            <button class="btn btn-primary" onclick="guardarResultado(${p.id})">💾 ${res.local !== undefined ? 'Editar' : 'Guardar'}</button>
+            ${res.local !== undefined ? `<button class="btn btn-danger" onclick="borrarResultado(${p.id})">🗑️</button>` : ''}
+            <button class="btn ${bloqueadoManual ? 'btn-warning' : 'btn-success'}" onclick="toggleBloqueo(${p.id})">${bloqueadoEfectivo ? '🔒' : '🔓'} ${bloqueadoManual ? 'Desbloquear' : 'Bloquear'}</button>
+          </div>`}
+          <div style="font-size:0.7rem; color:#888; text-align:center; margin-top:5px">📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · ${etiqueta}</div>
+        </div>
+      `;
     }
 
     async function guardarResultado(partidoId) {
@@ -1136,10 +1251,17 @@
       const selectedEqId = parseInt(selActual) || 0;
       const predsEquipo = selectedEqId ? (predicciones[selectedEqId] || {}) : {};
 
-      const grupos = {};
+      const gruposMap = {};
+      const knockoutMap = {};
       for (const p of partidosData) {
-        if (!grupos[p.grupo]) grupos[p.grupo] = [];
-        grupos[p.grupo].push(p);
+        const fase = p.fase || 'grupos';
+        if (fase === 'grupos') {
+          if (!gruposMap[p.grupo]) gruposMap[p.grupo] = [];
+          gruposMap[p.grupo].push(p);
+        } else {
+          if (!knockoutMap[fase]) knockoutMap[fase] = [];
+          knockoutMap[fase].push(p);
+        }
       }
 
       let html = `
@@ -1163,41 +1285,56 @@
         html += `<div style="font-size:0.75rem; color:#ff9800; margin-bottom:0.8rem; padding:6px 10px; background:rgba(255,152,0,0.1); border-radius:6px; border:1px solid rgba(255,152,0,0.3)">
           ⚡ Modo Admin: puedes editar cualquier predicción sin importar si el partido está bloqueado o ya tiene resultado
         </div>`;
-        for (const grupo of Object.keys(grupos).sort()) {
+
+        // Fase de grupos
+        for (const grupo of Object.keys(gruposMap).sort()) {
           html += `<div class="grupo-titulo">🏳️ Grupo ${grupo}</div>`;
-          for (const p of grupos[grupo]) {
-            const pred = predsEquipo[p.id] || {};
-            const bloqueado = p.bloqueado_efectivo === 1;
-            const res = resultados[p.id];
-            html += `
-              <div class="partido-item">
-                <div class="partido-equipos">
-                  <span class="equipo-local">${p.local}</span>
-                  <span class="vs">${bloqueado ? '🔒' : '🔓'} VS</span>
-                  <span class="equipo-visita">${p.visita}</span>
-                </div>
-                <div style="font-size:0.7rem; color:#888; text-align:center; margin:4px 0">
-                  📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · Grupo ${p.grupo}
-                  ${res ? ` · <span style="color:#6c9ebf">Real: ${res.local}-${res.visita}</span>` : ''}
-                </div>
-                <div class="pred-inputs">
-                  <input type="number" id="adminPredL_${selectedEqId}_${p.id}"
-                    value="${pred.local !== undefined ? pred.local : ''}" placeholder="0" min="0" max="20">
-                  <span>-</span>
-                  <input type="number" id="adminPredV_${selectedEqId}_${p.id}"
-                    value="${pred.visita !== undefined ? pred.visita : ''}" placeholder="0" min="0" max="20">
-                  <button class="btn btn-primary" onclick="adminGuardarPrediccion(${selectedEqId}, ${p.id})">💾</button>
-                  ${pred.local !== undefined
-                    ? `<button class="btn btn-danger" style="padding:4px 8px; font-size:0.75rem" onclick="adminBorrarPrediccion(${selectedEqId}, ${p.id})">🗑️</button>`
-                    : ''}
-                </div>
-              </div>`;
-          }
+          for (const p of gruposMap[grupo]) html += renderAdminPredPartido(p, selectedEqId, predsEquipo);
+        }
+
+        // Knockout
+        for (const fase of ['16vos','octavos','cuartos','semifinal','final']) {
+          if (!knockoutMap[fase] || !knockoutMap[fase].length) continue;
+          const visibles = knockoutMap[fase].filter(p => p.local !== 'Por definir' && p.visita !== 'Por definir');
+          if (!visibles.length) continue;
+          html += `<div class="grupo-titulo">🏆 ${FASES_LABEL[fase]}</div>`;
+          for (const p of visibles) html += renderAdminPredPartido(p, selectedEqId, predsEquipo);
         }
       }
 
       html += `</div>`;
       document.getElementById('adminPrediccionesAdmin').innerHTML = html;
+    }
+
+    function renderAdminPredPartido(p, selectedEqId, predsEquipo) {
+      const pred = predsEquipo[p.id] || {};
+      const bloqueado = p.bloqueado_efectivo === 1;
+      const res = resultados[p.id];
+      const fase = p.fase || 'grupos';
+      const etiqueta = fase === 'grupos' ? `Grupo ${p.grupo}` : FASES_LABEL[fase];
+      return `
+        <div class="partido-item">
+          <div class="partido-equipos">
+            <span class="equipo-local">${bandera(p.local)} ${p.local}</span>
+            <span class="vs">${bloqueado ? '🔒' : '🔓'} VS</span>
+            <span class="equipo-visita">${bandera(p.visita)} ${p.visita}</span>
+          </div>
+          <div style="font-size:0.7rem; color:#888; text-align:center; margin:4px 0">
+            📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · ${etiqueta}
+            ${res ? ` · <span style="color:#6c9ebf">Real: ${res.local}-${res.visita}</span>` : ''}
+          </div>
+          <div class="pred-inputs">
+            <input type="number" id="adminPredL_${selectedEqId}_${p.id}"
+              value="${pred.local !== undefined ? pred.local : ''}" placeholder="0" min="0" max="20">
+            <span>-</span>
+            <input type="number" id="adminPredV_${selectedEqId}_${p.id}"
+              value="${pred.visita !== undefined ? pred.visita : ''}" placeholder="0" min="0" max="20">
+            <button class="btn btn-primary" onclick="adminGuardarPrediccion(${selectedEqId}, ${p.id})">💾</button>
+            ${pred.local !== undefined
+              ? `<button class="btn btn-danger" style="padding:4px 8px; font-size:0.75rem" onclick="adminBorrarPrediccion(${selectedEqId}, ${p.id})">🗑️</button>`
+              : ''}
+          </div>
+        </div>`;
     }
 
     async function adminGuardarPrediccion(equipoId, partidoId) {
@@ -1296,6 +1433,68 @@
       }
     }
 
+    // ==================== FIXTURE / BRACKET ====================
+    function renderBracketMatch(p) {
+      const res = resultados[p.id];
+      const tbd = p.local === 'Por definir' || p.visita === 'Por definir';
+      const localWin  = res && res.local > res.visita;
+      const visitaWin = res && res.visita > res.local;
+      return `<div class="bm ${res ? 'played' : ''} ${tbd ? 'bm-tbd' : ''}">
+        <div class="bm-team ${localWin ? 'winner' : ''}">
+          <span class="bm-flag">${bandera(p.local)}</span>
+          <span class="bm-name">${p.local}</span>
+          ${res ? `<span class="bm-score">${res.local}</span>` : ''}
+        </div>
+        <div class="bm-team ${visitaWin ? 'winner' : ''}">
+          <span class="bm-flag">${bandera(p.visita)}</span>
+          <span class="bm-name">${p.visita}</span>
+          ${res ? `<span class="bm-score">${res.visita}</span>` : ''}
+        </div>
+      </div>`;
+    }
+
+    function renderFixture() {
+      const byId = {};
+      for (const p of partidosData) byId[p.id] = p;
+
+      const leftR32  = [73,74,75,76,77,78,79,80].map(id => byId[id]).filter(Boolean);
+      const rightR32 = [81,82,83,84,85,86,87,88].map(id => byId[id]).filter(Boolean);
+      const leftR16  = [89,90,91,92].map(id => byId[id]).filter(Boolean);
+      const rightR16 = [93,94,95,96].map(id => byId[id]).filter(Boolean);
+      const leftQF   = [97,98].map(id => byId[id]).filter(Boolean);
+      const rightQF  = [99,100].map(id => byId[id]).filter(Boolean);
+      const leftSF   = byId[101];
+      const rightSF  = byId[102];
+      const final    = byId[103];
+
+      if (!leftR32.length) {
+        document.getElementById('fixtureContent').innerHTML = '<div style="text-align:center;padding:2rem;color:#888">Los partidos de eliminación directa aún no están disponibles</div>';
+        return;
+      }
+
+      const col = (title, matches) => `
+        <div class="bracket-round">
+          <div class="bracket-round-title">${title}</div>
+          ${Array.isArray(matches) ? matches.map(m => renderBracketMatch(m)).join('') : (matches ? renderBracketMatch(matches) : '')}
+        </div>`;
+
+      document.getElementById('fixtureContent').innerHTML = `
+        <div class="bracket-wrapper">
+          <div class="bracket">
+            ${col('16vos', leftR32)}
+            ${col('Octavos', leftR16)}
+            ${col('Cuartos', leftQF)}
+            ${col('Semi', leftSF ? [leftSF] : [])}
+            ${col('🏆 Final', final ? [final] : [])}
+            ${col('Semi', rightSF ? [rightSF] : [])}
+            ${col('Cuartos', rightQF)}
+            ${col('Octavos', rightR16)}
+            ${col('16vos', rightR32)}
+          </div>
+        </div>
+      `;
+    }
+
     // ==================== NAVEGACIÓN ====================
     function showPage(page) {
       currentPage = page;
@@ -1304,6 +1503,7 @@
       document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
       if (page === 'dashboard') renderDashboard();
       if (page === 'predicciones') renderPredicciones();
+      if (page === 'fixture') renderFixture();
       if (page === 'admin' && currentUser?.isAdmin) showAdminTab(currentAdminTab);
     }
 
@@ -1385,12 +1585,13 @@
 
     function actualizarMobileNav() {
       const mobileNav = document.getElementById('mobileNav');
-      const pages = ['dashboard', 'predicciones'];
+      const pages = ['dashboard', 'predicciones', 'fixture'];
       if (currentUser?.isAdmin) pages.push('admin');
+      const icons = { dashboard:'📊', predicciones:'🎯', fixture:'🏆', admin:'⚙️' };
       mobileNav.innerHTML = pages.map(p => `
         <button onclick="showPage('${p}')" class="${currentPage === p ? 'active' : ''}">
-          ${p === 'dashboard' ? '📊' : p === 'predicciones' ? '🎯' : '⚙️'}
-          <br><span style="font-size:0.6rem">${p}</span>
+          ${icons[p] || '📋'}
+          <br><span style="font-size:0.6rem">${p === 'fixture' ? 'Fixture' : p}</span>
         </button>
       `).join('');
     }
@@ -1458,6 +1659,7 @@
     window.agregarSede = agregarSede;
     window.agregarEquipoASede = agregarEquipoASede;
     window.filtrarEquiposPorSede = filtrarEquiposPorSede;
+    window.renderFixture = renderFixture;
     window.showPage = showPage;
     window.showAdminTab = showAdminTab;
     window.doLogin = doLogin;

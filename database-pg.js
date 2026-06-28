@@ -141,6 +141,66 @@ const PARTIDOS_72 = [
   [72,'J','27/06/2026','21:00','Argelia','Austria']
 ];
 
+// ── Partidos Knockout (31 partidos: 16vos + octavos + cuartos + semis + final) ─
+const PARTIDOS_KNOCKOUT = [
+  // 16VOS — Bracket izquierdo
+  [73,'16vos','29/06/2026','11:00','Alemania','Países Bajos'],
+  [74,'16vos','29/06/2026','15:00','Francia','Suecia'],
+  [75,'16vos','29/06/2026','19:00','Sudáfrica','Canadá'],
+  [76,'16vos','30/06/2026','11:00','Paraguay','Marruecos'],
+  [77,'16vos','30/06/2026','15:00','Portugal','Croacia'],
+  [78,'16vos','30/06/2026','19:00','España','Austria'],
+  [79,'16vos','01/07/2026','11:00','Estados Unidos','Bosnia'],
+  [80,'16vos','01/07/2026','15:00','Bélgica','Senegal'],
+  // 16VOS — Bracket derecho
+  [81,'16vos','01/07/2026','19:00','Brasil','Japón'],
+  [82,'16vos','02/07/2026','11:00','Costa de Marfil','Noruega'],
+  [83,'16vos','02/07/2026','15:00','México','Ecuador'],
+  [84,'16vos','02/07/2026','19:00','Inglaterra','República Democrática del Congo'],
+  [85,'16vos','29/06/2026','13:00','Argentina','Uzbekistán'],
+  [86,'16vos','30/06/2026','13:00','Australia','Egipto'],
+  [87,'16vos','01/07/2026','13:00','Suiza','Argelia'],
+  [88,'16vos','02/07/2026','13:00','Colombia','Ghana'],
+  // OCTAVOS
+  [89,'octavos','04/07/2026','11:00','Por definir','Por definir'],
+  [90,'octavos','04/07/2026','15:00','Por definir','Por definir'],
+  [91,'octavos','04/07/2026','19:00','Por definir','Por definir'],
+  [92,'octavos','05/07/2026','11:00','Por definir','Por definir'],
+  [93,'octavos','05/07/2026','15:00','Por definir','Por definir'],
+  [94,'octavos','05/07/2026','19:00','Por definir','Por definir'],
+  [95,'octavos','06/07/2026','11:00','Por definir','Por definir'],
+  [96,'octavos','06/07/2026','15:00','Por definir','Por definir'],
+  // CUARTOS
+  [97, 'cuartos','08/07/2026','14:00','Por definir','Por definir'],
+  [98, 'cuartos','08/07/2026','18:00','Por definir','Por definir'],
+  [99, 'cuartos','09/07/2026','14:00','Por definir','Por definir'],
+  [100,'cuartos','09/07/2026','18:00','Por definir','Por definir'],
+  // SEMIFINALES
+  [101,'semifinal','12/07/2026','15:00','Por definir','Por definir'],
+  [102,'semifinal','12/07/2026','19:00','Por definir','Por definir'],
+  // FINAL
+  [103,'final','15/07/2026','15:00','Por definir','Por definir']
+];
+
+// Estructura del bracket: partido → { next: id del siguiente partido, pos: 'local'|'visita' }
+const BRACKET_ADVANCE = {
+  73:{next:89,pos:'local'},  74:{next:89,pos:'visita'},
+  75:{next:90,pos:'local'},  76:{next:90,pos:'visita'},
+  77:{next:91,pos:'local'},  78:{next:91,pos:'visita'},
+  79:{next:92,pos:'local'},  80:{next:92,pos:'visita'},
+  81:{next:93,pos:'local'},  82:{next:93,pos:'visita'},
+  83:{next:94,pos:'local'},  84:{next:94,pos:'visita'},
+  85:{next:95,pos:'local'},  86:{next:95,pos:'visita'},
+  87:{next:96,pos:'local'},  88:{next:96,pos:'visita'},
+  89:{next:97,pos:'local'},  90:{next:97,pos:'visita'},
+  91:{next:98,pos:'local'},  92:{next:98,pos:'visita'},
+  93:{next:99,pos:'local'},  94:{next:99,pos:'visita'},
+  95:{next:100,pos:'local'}, 96:{next:100,pos:'visita'},
+  97:{next:101,pos:'local'}, 98:{next:101,pos:'visita'},
+  99:{next:102,pos:'local'}, 100:{next:102,pos:'visita'},
+  101:{next:103,pos:'local'},102:{next:103,pos:'visita'}
+};
+
 // Mapeo de IDs viejos (1-36) a nuevos (1-72) para migración automática
 const PARTIDO_MAPPING = {
   1:1,  2:2,  3:25, 4:28, 5:53, 6:54,
@@ -187,7 +247,8 @@ async function initDB() {
         local      TEXT    NOT NULL,
         visita     TEXT    NOT NULL,
         sede_id    INTEGER,
-        bloqueado  INTEGER NOT NULL DEFAULT 0
+        bloqueado  INTEGER NOT NULL DEFAULT 0,
+        fase       TEXT    DEFAULT 'grupos'
       )
     `);
 
@@ -341,6 +402,13 @@ async function initDB() {
       }
     }
 
+    // ── 2b. Agregar columna fase si no existe ───────────────────────────────
+    if (!partidosCols.has('fase')) {
+      await client.query("ALTER TABLE partidos ADD COLUMN fase TEXT DEFAULT 'grupos'");
+      await client.query("UPDATE partidos SET fase='grupos' WHERE fase IS NULL");
+      console.log('  → columna fase agregada a partidos');
+    }
+
     // ── 3. Seeds (solo si las tablas están vacías) ────────────────────────────
     const { rows: [{ c: sc }] } = await client.query('SELECT COUNT(*)::int AS c FROM sedes');
     if (sc === 0) {
@@ -387,6 +455,22 @@ async function initDB() {
       await client.query("SELECT setval('equipos_id_seq', (SELECT MAX(id) FROM equipos))");
     }
 
+    // ── 4. Insertar partidos knockout si no existen ──────────────────────────
+    const { rows: [{ c: kc }] } = await client.query(
+      "SELECT COUNT(*)::int AS c FROM partidos WHERE id >= 73"
+    );
+    if (kc === 0) {
+      const { rows: [sedeRow2] } = await client.query("SELECT id FROM sedes WHERE slug='gca-cali'");
+      const sedeIdK = sedeRow2 ? sedeRow2.id : 1;
+      for (const [id, fase, fecha, hora, local, visita] of PARTIDOS_KNOCKOUT) {
+        await client.query(
+          'INSERT INTO partidos (id,grupo,fecha_hora,local,visita,sede_id,bloqueado,fase) VALUES ($1,$2,$3,$4,$5,$6,0,$7)',
+          [id, fase, toTimestamp(fecha, hora), local, visita, sedeIdK, fase]
+        );
+      }
+      console.log('  → 31 partidos de eliminación directa insertados');
+    }
+
     await client.query('COMMIT');
     console.log('✅ PostgreSQL inicializado correctamente');
   } catch (err) {
@@ -411,6 +495,7 @@ async function getAllData() {
         p.visita,
         p.sede_id,
         p.bloqueado,
+        COALESCE(p.fase, 'grupos') AS fase,
         TO_CHAR(p.fecha_hora AT TIME ZONE 'America/Bogota', 'DD/MM/YYYY') AS fecha,
         TO_CHAR(p.fecha_hora AT TIME ZONE 'America/Bogota', 'HH24:MI')    AS hora,
         CASE WHEN (
@@ -492,6 +577,31 @@ async function toggleBloqueoPartido(partidoId) {
   return { changes: rowCount };
 }
 
+// ── Avance automático en bracket knockout ────────────────────────────────────
+
+async function advanceWinner(partidoId, golLocal, golVisita) {
+  const advance = BRACKET_ADVANCE[partidoId];
+  if (!advance) return;
+  const { rows: [match] } = await pool.query('SELECT local, visita FROM partidos WHERE id=$1', [partidoId]);
+  if (!match) return;
+  const winner = golLocal > golVisita ? match.local : match.visita;
+  if (advance.pos === 'local') {
+    await pool.query('UPDATE partidos SET local=$1 WHERE id=$2', [winner, advance.next]);
+  } else {
+    await pool.query('UPDATE partidos SET visita=$1 WHERE id=$2', [winner, advance.next]);
+  }
+}
+
+async function revertAdvance(partidoId) {
+  const advance = BRACKET_ADVANCE[partidoId];
+  if (!advance) return;
+  if (advance.pos === 'local') {
+    await pool.query("UPDATE partidos SET local='Por definir' WHERE id=$1", [advance.next]);
+  } else {
+    await pool.query("UPDATE partidos SET visita='Por definir' WHERE id=$1", [advance.next]);
+  }
+}
+
 // ── Statements preparados ─────────────────────────────────────────────────────
 const stmts = {
   findEquipo:          prepare('SELECT * FROM equipos WHERE id=? AND pin=? AND activo=1'),
@@ -542,6 +652,9 @@ module.exports = {
   // Bloqueo
   isPartidoBloqueado,
   toggleBloqueoPartido,
+  // Knockout
+  advanceWinner,
+  revertAdvance,
   // Compatibilidad legada (server.js antiguo usa hasResultado)
   hasResultado: isPartidoBloqueado
 };
