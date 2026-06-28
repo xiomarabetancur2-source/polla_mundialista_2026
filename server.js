@@ -65,10 +65,11 @@ app.put('/api/equipos/:id/toggle', wrap(async (req, res) => {
 
 // ── Resultados ────────────────────────────────────────────────────────────────
 app.post('/api/resultados', wrap(async (req, res) => {
-  const { partidoId, local, visita } = req.body;
+  const { partidoId, local, visita, penGanador } = req.body;
   const pid = parseInt(partidoId), gl = parseInt(local), gv = parseInt(visita);
-  await db.upsertResultado(pid, gl, gv);
-  await db.advanceWinner(pid, gl, gv);
+  const pen = (gl === gv && penGanador) ? penGanador : null;
+  await db.upsertResultado(pid, gl, gv, pen);
+  await db.advanceWinner(pid, gl, gv, pen);
   await broadcast();
   res.json({ ok: true });
 }));
@@ -122,8 +123,10 @@ app.put('/api/partidos/:id/bloqueo', wrap(async (req, res) => {
 
 // ── Predicciones (Admin — sin restricción de bloqueo) ────────────────────────
 app.post('/api/admin/predicciones', wrap(async (req, res) => {
-  const { equipoId, partidoId, local, visita } = req.body;
-  await db.upsertPrediccion(parseInt(equipoId), parseInt(partidoId), parseInt(local), parseInt(visita));
+  const { equipoId, partidoId, local, visita, penGanador } = req.body;
+  const gl = parseInt(local), gv = parseInt(visita);
+  const pen = (gl === gv && penGanador) ? penGanador : null;
+  await db.upsertPrediccion(parseInt(equipoId), parseInt(partidoId), gl, gv, pen);
   await broadcast();
   res.json({ ok: true });
 }));
@@ -136,11 +139,13 @@ app.delete('/api/admin/predicciones/:equipoId/:partidoId', wrap(async (req, res)
 
 // ── Predicciones ──────────────────────────────────────────────────────────────
 app.post('/api/predicciones', wrap(async (req, res) => {
-  const { equipoId, partidoId, local, visita } = req.body;
+  const { equipoId, partidoId, local, visita, penGanador } = req.body;
   if (await db.isPartidoBloqueado(parseInt(partidoId))) {
     return res.status(400).json({ error: 'Este partido está bloqueado, no se puede predecir' });
   }
-  await db.upsertPrediccion(parseInt(equipoId), parseInt(partidoId), parseInt(local), parseInt(visita));
+  const gl = parseInt(local), gv = parseInt(visita);
+  const pen = (gl === gv && penGanador) ? penGanador : null;
+  await db.upsertPrediccion(parseInt(equipoId), parseInt(partidoId), gl, gv, pen);
   await broadcast();
   res.json({ ok: true });
 }));

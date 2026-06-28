@@ -697,12 +697,12 @@
       partidosData = data.partidos || [];
 
       resultados = {};
-      for (const r of data.resultados) resultados[r.partido_id] = { local: r.local, visita: r.visita };
+      for (const r of data.resultados) resultados[r.partido_id] = { local: r.local, visita: r.visita, pen_ganador: r.pen_ganador || null };
 
       predicciones = {};
       for (const p of data.predicciones) {
         if (!predicciones[p.equipo_id]) predicciones[p.equipo_id] = {};
-        predicciones[p.equipo_id][p.partido_id] = { local: p.local, visita: p.visita };
+        predicciones[p.equipo_id][p.partido_id] = { local: p.local, visita: p.visita, pen_ganador: p.pen_ganador || null };
       }
 
       adherencia = {};
@@ -750,11 +750,24 @@
     });
 
     // ==================== CÁLCULO DE PUNTOS ====================
-    function calcularPuntosPrediccion(predLocal, predVisit, resLocal, resVisit) {
+    function calcularPuntosPrediccion(predLocal, predVisit, resLocal, resVisit, predPen, resPen) {
       if (resLocal === undefined || resVisit === undefined) return null;
-      if (predLocal === resLocal && predVisit === resVisit) return CONFIG.ptsExacto;
-      const predGanador = predLocal > predVisit ? 'L' : (predLocal < predVisit ? 'V' : 'E');
-      const resGanador = resLocal > resVisit ? 'L' : (resLocal < resVisit ? 'V' : 'E');
+      const esEmpate = resLocal === resVisit;
+      if (predLocal === resLocal && predVisit === resVisit) {
+        if (esEmpate && resPen) {
+          return predPen === resPen ? CONFIG.ptsExacto : CONFIG.ptsGanador;
+        }
+        return CONFIG.ptsExacto;
+      }
+      // Determinar quién avanza/gana
+      let predGanador, resGanador;
+      if (esEmpate && resPen) {
+        resGanador = resPen;
+        predGanador = predLocal > predVisit ? 'local' : (predVisit > predLocal ? 'visita' : predPen);
+      } else {
+        predGanador = predLocal > predVisit ? 'local' : (predLocal < predVisit ? 'visita' : 'empate');
+        resGanador = resLocal > resVisit ? 'local' : (resLocal < resVisit ? 'visita' : 'empate');
+      }
       if (predGanador === resGanador) return CONFIG.ptsGanador;
       return 0;
     }
@@ -771,7 +784,7 @@
           const resultado = resultados[partido.id];
           const prediccion = predsEquipo[partido.id];
           if (resultado && prediccion && prediccion.local !== undefined && prediccion.visita !== undefined) {
-            const pts = calcularPuntosPrediccion(prediccion.local, prediccion.visita, resultado.local, resultado.visita);
+            const pts = calcularPuntosPrediccion(prediccion.local, prediccion.visita, resultado.local, resultado.visita, prediccion.pen_ganador, resultado.pen_ganador);
             if (pts !== null) { puntosPrediccion += pts; if (pts === CONFIG.ptsExacto) exactos++; }
           }
         }
@@ -901,6 +914,7 @@
       const pred = misPreds[p.id] || {};
       const bloqueado = p.bloqueado_efectivo === 1;
       const fase = p.fase || 'grupos';
+      const esKnockout = fase !== 'grupos';
       const etiqueta = fase === 'grupos' ? `Grupo ${p.grupo}` : FASES_LABEL[fase];
 
       let html = `<div class="partido-item">
@@ -911,21 +925,45 @@
         </div>
         <div style="font-size:0.7rem; color:#888; text-align:center; margin:5px 0">📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · ${etiqueta}</div>`;
       if (bloqueado) {
-        const pts = res ? calcularPuntosPrediccion(pred.local, pred.visita, res.local, res.visita) : null;
+        const pts = res ? calcularPuntosPrediccion(pred.local, pred.visita, res.local, res.visita, pred.pen_ganador, res.pen_ganador) : null;
+        let predTxt = `${pred.local !== undefined ? pred.local : '?'} - ${pred.visita !== undefined ? pred.visita : '?'}`;
+        if (pred.pen_ganador) predTxt += ` (pen: ${pred.pen_ganador === 'local' ? p.local : p.visita})`;
         html += `<div class="pred-resultado">
-          🔒 Tu predicción: ${pred.local !== undefined ? pred.local : '?'} - ${pred.visita !== undefined ? pred.visita : '?'}<br>
+          🔒 Tu predicción: ${predTxt}<br>
           <span style="color: ${pts > 0 ? '#6c9ebf' : '#888'}">${pts !== null ? pts + ' puntos' : ''}</span>
         </div>`;
       } else {
+        const predL = pred.local !== undefined ? pred.local : '';
+        const predV = pred.visita !== undefined ? pred.visita : '';
+        const showPen = esKnockout && predL !== '' && predV !== '' && parseInt(predL) === parseInt(predV);
         html += `<div class="pred-inputs">
-          <input type="number" id="predL_${p.id}" value="${pred.local !== undefined ? pred.local : ''}" placeholder="0" min="0" max="20" onchange="guardarPrediccion(${p.id})">
+          <input type="number" id="predL_${p.id}" value="${predL}" placeholder="0" min="0" max="20" oninput="checkPenales(${p.id})" onchange="guardarPrediccion(${p.id})">
           <span>-</span>
-          <input type="number" id="predV_${p.id}" value="${pred.visita !== undefined ? pred.visita : ''}" placeholder="0" min="0" max="20" onchange="guardarPrediccion(${p.id})">
+          <input type="number" id="predV_${p.id}" value="${predV}" placeholder="0" min="0" max="20" oninput="checkPenales(${p.id})" onchange="guardarPrediccion(${p.id})">
           <button class="btn-borrar-pred" onclick="borrarPrediccion(${p.id})" title="Borrar predicción">🗑️</button>
         </div>`;
+        if (esKnockout) {
+          html += `<div id="penPanel_${p.id}" style="text-align:center; margin-top:4px; ${showPen ? '' : 'display:none'}">
+            <select id="predPen_${p.id}" style="padding:4px 8px; background:rgba(13,33,55,0.8); border:1px solid rgba(255,152,0,0.4); border-radius:6px; color:#ff9800; font-size:0.78rem" onchange="guardarPrediccion(${p.id})">
+              <option value="">⚽ ¿Quién gana en penales?</option>
+              <option value="local" ${pred.pen_ganador === 'local' ? 'selected' : ''}>${p.local}</option>
+              <option value="visita" ${pred.pen_ganador === 'visita' ? 'selected' : ''}>${p.visita}</option>
+            </select>
+          </div>`;
+        }
       }
       html += `</div>`;
       return html;
+    }
+
+    function checkPenales(partidoId) {
+      const partido = partidosData.find(p => p.id === partidoId);
+      if (!partido || !partido.fase || partido.fase === 'grupos') return;
+      const l = document.getElementById(`predL_${partidoId}`)?.value;
+      const v = document.getElementById(`predV_${partidoId}`)?.value;
+      const panel = document.getElementById(`penPanel_${partidoId}`);
+      if (!panel) return;
+      panel.style.display = (l !== '' && v !== '' && parseInt(l) === parseInt(v)) ? '' : 'none';
     }
 
     async function guardarPrediccion(partidoId) {
@@ -933,7 +971,16 @@
       const local = document.getElementById(`predL_${partidoId}`).value;
       const visita = document.getElementById(`predV_${partidoId}`).value;
       if (local === '' || visita === '') { mostrarToast('❌ Ingresa ambos marcadores', 'error'); return; }
-      const res = await apiCall('POST', '/api/predicciones', { equipoId: currentUser.id, partidoId, local: parseInt(local), visita: parseInt(visita) });
+      const gl = parseInt(local), gv = parseInt(visita);
+      const partido = partidosData.find(p => p.id === partidoId);
+      const esKnockout = partido && partido.fase && partido.fase !== 'grupos';
+      let penGanador = null;
+      if (esKnockout && gl === gv) {
+        const penSel = document.getElementById(`predPen_${partidoId}`);
+        if (!penSel || !penSel.value) { mostrarToast('❌ Selecciona quién gana en penales', 'error'); return; }
+        penGanador = penSel.value;
+      }
+      const res = await apiCall('POST', '/api/predicciones', { equipoId: currentUser.id, partidoId, local: gl, visita: gv, penGanador });
       if (res.error) mostrarToast('❌ ' + res.error, 'error');
       else mostrarToast('✅ Predicción guardada');
     }
@@ -1074,8 +1121,10 @@
       const bloqueadoManual = p.bloqueado === 1;
       const bloqueadoEfectivo = p.bloqueado_efectivo === 1;
       const fase = p.fase || 'grupos';
+      const esKnockout = fase !== 'grupos';
       const etiqueta = fase === 'grupos' ? `Grupo ${p.grupo}` : FASES_LABEL[fase];
       const tbd = p.local === 'Por definir' || p.visita === 'Por definir';
+      const showPen = esKnockout && res.local !== undefined && res.local === res.visita;
       return `
         <div class="partido-item" ${tbd ? 'style="opacity:0.5"' : ''}>
           <div class="partido-equipos">
@@ -1085,23 +1134,47 @@
           </div>
           ${tbd ? '<div style="font-size:0.7rem;color:#888;text-align:center;margin-top:5px">⏳ Equipos por definir</div>' : `
           <div style="display:flex; justify-content:center; gap:0.5rem; margin-top:0.5rem; flex-wrap:wrap">
-            <input type="number" id="resL_${p.id}" class="resultado-input" value="${res.local !== undefined ? res.local : ''}" placeholder="0" min="0" max="20">
+            <input type="number" id="resL_${p.id}" class="resultado-input" value="${res.local !== undefined ? res.local : ''}" placeholder="0" min="0" max="20" ${esKnockout ? `oninput="checkResPen(${p.id})"` : ''}>
             <span>-</span>
-            <input type="number" id="resV_${p.id}" class="resultado-input" value="${res.visita !== undefined ? res.visita : ''}" placeholder="0" min="0" max="20">
+            <input type="number" id="resV_${p.id}" class="resultado-input" value="${res.visita !== undefined ? res.visita : ''}" placeholder="0" min="0" max="20" ${esKnockout ? `oninput="checkResPen(${p.id})"` : ''}>
             <button class="btn btn-primary" onclick="guardarResultado(${p.id})">💾 ${res.local !== undefined ? 'Editar' : 'Guardar'}</button>
             ${res.local !== undefined ? `<button class="btn btn-danger" onclick="borrarResultado(${p.id})">🗑️</button>` : ''}
             <button class="btn ${bloqueadoManual ? 'btn-warning' : 'btn-success'}" onclick="toggleBloqueo(${p.id})">${bloqueadoEfectivo ? '🔒' : '🔓'} ${bloqueadoManual ? 'Desbloquear' : 'Bloquear'}</button>
-          </div>`}
+          </div>
+          ${esKnockout ? `<div id="resPenPanel_${p.id}" style="text-align:center; margin-top:6px; ${showPen ? '' : 'display:none'}">
+            <select id="resPen_${p.id}" style="padding:5px 10px; background:rgba(13,33,55,0.8); border:1px solid rgba(255,152,0,0.5); border-radius:6px; color:#ff9800; font-size:0.82rem">
+              <option value="">⚽ ¿Quién gana en penales?</option>
+              <option value="local" ${res.pen_ganador === 'local' ? 'selected' : ''}>${p.local}</option>
+              <option value="visita" ${res.pen_ganador === 'visita' ? 'selected' : ''}>${p.visita}</option>
+            </select>
+          </div>` : ''}`}
           <div style="font-size:0.7rem; color:#888; text-align:center; margin-top:5px">📅 ${p.fecha}${p.hora ? ' ' + p.hora : ''} · ${etiqueta}</div>
         </div>
       `;
+    }
+
+    function checkResPen(partidoId) {
+      const l = document.getElementById(`resL_${partidoId}`)?.value;
+      const v = document.getElementById(`resV_${partidoId}`)?.value;
+      const panel = document.getElementById(`resPenPanel_${partidoId}`);
+      if (!panel) return;
+      panel.style.display = (l !== '' && v !== '' && parseInt(l) === parseInt(v)) ? '' : 'none';
     }
 
     async function guardarResultado(partidoId) {
       const local = document.getElementById(`resL_${partidoId}`).value;
       const visita = document.getElementById(`resV_${partidoId}`).value;
       if (local === '' || visita === '') { mostrarToast('❌ Ingresa ambos marcadores', 'error'); return; }
-      await apiCall('POST', '/api/resultados', { partidoId, local: parseInt(local), visita: parseInt(visita) });
+      const gl = parseInt(local), gv = parseInt(visita);
+      const partido = partidosData.find(p => p.id === partidoId);
+      const esKnockout = partido && partido.fase && partido.fase !== 'grupos';
+      let penGanador = null;
+      if (esKnockout && gl === gv) {
+        const penSel = document.getElementById(`resPen_${partidoId}`);
+        if (!penSel || !penSel.value) { mostrarToast('❌ Selecciona quién gana en penales', 'error'); return; }
+        penGanador = penSel.value;
+      }
+      await apiCall('POST', '/api/resultados', { partidoId, local: gl, visita: gv, penGanador });
       mostrarToast('✅ Resultado guardado');
     }
 
@@ -1457,18 +1530,19 @@
     function renderBracketMatch(p) {
       const res = resultados[p.id];
       const tbd = p.local === 'Por definir' || p.visita === 'Por definir';
-      const localWin  = res && res.local > res.visita;
-      const visitaWin = res && res.visita > res.local;
+      const esPen = res && res.pen_ganador;
+      const localWin  = res && (res.local > res.visita || res.pen_ganador === 'local');
+      const visitaWin = res && (res.visita > res.local || res.pen_ganador === 'visita');
       return `<div class="bm ${res ? 'played' : ''} ${tbd ? 'bm-tbd' : ''}">
         <div class="bm-team ${localWin ? 'winner' : ''}">
           <span class="bm-flag">${bandera(p.local)}</span>
           <span class="bm-name">${p.local}</span>
-          ${res ? `<span class="bm-score">${res.local}</span>` : ''}
+          ${res ? `<span class="bm-score">${res.local}${esPen && localWin ? ' p' : ''}</span>` : ''}
         </div>
         <div class="bm-team ${visitaWin ? 'winner' : ''}">
           <span class="bm-flag">${bandera(p.visita)}</span>
           <span class="bm-name">${p.visita}</span>
-          ${res ? `<span class="bm-score">${res.visita}</span>` : ''}
+          ${res ? `<span class="bm-score">${res.visita}${esPen && visitaWin ? ' p' : ''}</span>` : ''}
         </div>
       </div>`;
     }
@@ -1673,6 +1747,8 @@
     window.adminGuardarPrediccion = adminGuardarPrediccion;
     window.adminBorrarPrediccion = adminBorrarPrediccion;
     window.toggleBloqueo = toggleBloqueo;
+    window.checkPenales = checkPenales;
+    window.checkResPen = checkResPen;
     window.guardarSede = guardarSede;
     window.toggleSede = toggleSede;
     window.agregarSede = agregarSede;

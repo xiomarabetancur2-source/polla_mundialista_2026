@@ -402,7 +402,25 @@ async function initDB() {
       }
     }
 
-    // ── 2b. Agregar columna fase si no existe ───────────────────────────────
+    // ── 2b. Agregar columna pen_ganador a resultados y predicciones si falta
+    const { rows: rCols } = await client.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='resultados'`
+    );
+    if (!new Set(rCols.map(r => r.column_name)).has('pen_ganador')) {
+      await client.query("ALTER TABLE resultados ADD COLUMN pen_ganador TEXT DEFAULT NULL");
+      console.log('  → pen_ganador agregado a resultados');
+    }
+    const { rows: prCols } = await client.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='predicciones'`
+    );
+    if (!new Set(prCols.map(r => r.column_name)).has('pen_ganador')) {
+      await client.query("ALTER TABLE predicciones ADD COLUMN pen_ganador TEXT DEFAULT NULL");
+      console.log('  → pen_ganador agregado a predicciones');
+    }
+
+    // ── 2c. Agregar columna fase si no existe ───────────────────────────────
     if (!partidosCols.has('fase')) {
       await client.query("ALTER TABLE partidos ADD COLUMN fase TEXT DEFAULT 'grupos'");
       await client.query("UPDATE partidos SET fase='grupos' WHERE fase IS NULL");
@@ -587,12 +605,17 @@ async function toggleBloqueoPartido(partidoId) {
 
 // ── Avance automático en bracket knockout ────────────────────────────────────
 
-async function advanceWinner(partidoId, golLocal, golVisita) {
+async function advanceWinner(partidoId, golLocal, golVisita, penGanador) {
   const advance = BRACKET_ADVANCE[partidoId];
   if (!advance) return;
   const { rows: [match] } = await pool.query('SELECT local, visita FROM partidos WHERE id=$1', [partidoId]);
   if (!match) return;
-  const winner = golLocal > golVisita ? match.local : match.visita;
+  let winner;
+  if (golLocal > golVisita) winner = match.local;
+  else if (golVisita > golLocal) winner = match.visita;
+  else if (penGanador === 'local') winner = match.local;
+  else if (penGanador === 'visita') winner = match.visita;
+  else return; // empate sin definir ganador por penales — no avanza aún
   if (advance.pos === 'local') {
     await pool.query('UPDATE partidos SET local=$1 WHERE id=$2', [winner, advance.next]);
   } else {
@@ -616,10 +639,10 @@ const stmts = {
   updateEquipo:        prepare('UPDATE equipos SET nombre=?,pin=? WHERE id=?'),
   toggleEquipo:        prepare('UPDATE equipos SET activo=CASE WHEN activo=1 THEN 0 ELSE 1 END WHERE id=?'),
   insertEquipo:        prepare('INSERT INTO equipos (nombre,pin,activo,sede_id) VALUES (?,?,1,?)'),
-  upsertResultado:     prepare('INSERT INTO resultados (partido_id,local,visita) VALUES (?,?,?) ON CONFLICT(partido_id) DO UPDATE SET local=EXCLUDED.local,visita=EXCLUDED.visita'),
+  upsertResultado:     prepare('INSERT INTO resultados (partido_id,local,visita,pen_ganador) VALUES (?,?,?,?) ON CONFLICT(partido_id) DO UPDATE SET local=EXCLUDED.local,visita=EXCLUDED.visita,pen_ganador=EXCLUDED.pen_ganador'),
   deleteResultado:     prepare('DELETE FROM resultados WHERE partido_id=?'),
   deleteAllResultados: prepare('DELETE FROM resultados'),
-  upsertPrediccion:    prepare('INSERT INTO predicciones (equipo_id,partido_id,local,visita) VALUES (?,?,?,?) ON CONFLICT(equipo_id,partido_id) DO UPDATE SET local=EXCLUDED.local,visita=EXCLUDED.visita'),
+  upsertPrediccion:    prepare('INSERT INTO predicciones (equipo_id,partido_id,local,visita,pen_ganador) VALUES (?,?,?,?,?) ON CONFLICT(equipo_id,partido_id) DO UPDATE SET local=EXCLUDED.local,visita=EXCLUDED.visita,pen_ganador=EXCLUDED.pen_ganador'),
   deletePrediccion:    prepare('DELETE FROM predicciones WHERE equipo_id=? AND partido_id=?'),
   deletePrediccionesEq:prepare('DELETE FROM predicciones WHERE equipo_id=?'),
   upsertAdherencia:    prepare('INSERT INTO adherencia (equipo_id,fecha,puntos) VALUES (?,?,?) ON CONFLICT(equipo_id,fecha) DO UPDATE SET puntos=EXCLUDED.puntos'),
@@ -639,11 +662,11 @@ module.exports = {
   toggleEquipo:         (id)                       => stmts.toggleEquipo.run(id),
   insertEquipo:         (nombre, pin, sedeId)       => stmts.insertEquipo.run(nombre, pin, sedeId || null),
   // Resultados
-  upsertResultado:      (pid, local, visita)       => stmts.upsertResultado.run(pid, local, visita),
+  upsertResultado:      (pid, local, visita, pen)   => stmts.upsertResultado.run(pid, local, visita, pen || null),
   deleteResultado:      (pid)                      => stmts.deleteResultado.run(pid),
   deleteAllResultados:  ()                         => stmts.deleteAllResultados.run(),
   // Predicciones
-  upsertPrediccion:     (eid, pid, local, visita)  => stmts.upsertPrediccion.run(eid, pid, local, visita),
+  upsertPrediccion:     (eid, pid, local, visita, pen) => stmts.upsertPrediccion.run(eid, pid, local, visita, pen || null),
   deletePrediccion:     (eid, pid)                 => stmts.deletePrediccion.run(eid, pid),
   deletePrediccionesEq: (eid)                      => stmts.deletePrediccionesEq.run(eid),
   // Adherencia / Bonos / Penalizaciones
