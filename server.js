@@ -42,6 +42,26 @@ app.post('/api/auth/admin', wrap((req, res) => {
 // ── Data ──────────────────────────────────────────────────────────────────────
 app.get('/api/data', wrap(async (_req, res) => res.json(await db.getAllData())));
 
+// ── Backup temporal (quitar después de usar) ─────────────────────────────────
+app.get('/api/backup', wrap(async (_req, res) => {
+  const { Pool } = require('pg');
+  const p = new Pool(
+    process.env.DATABASE_URL
+      ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }
+      : { host: process.env.PGHOST || 'localhost', database: process.env.PGDATABASE || 'mundialito',
+          user: process.env.PGUSER || 'postgres', password: process.env.PGPASSWORD || '',
+          port: parseInt(process.env.PGPORT || '5432'), ssl: false }
+  );
+  const tablas = ['sedes','equipos','partidos','resultados','predicciones','adherencia','bonos','penalizaciones'];
+  const data = {};
+  for (const t of tablas) {
+    try { data[t] = (await p.query(`SELECT * FROM ${t} ORDER BY id`)).rows; }
+    catch { data[t] = []; }
+  }
+  await p.end();
+  res.json(data);
+}));
+
 // ── Equipos ───────────────────────────────────────────────────────────────────
 app.put('/api/equipos/:id', wrap(async (req, res) => {
   const { nombre, pin } = req.body;
