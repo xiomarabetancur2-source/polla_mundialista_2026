@@ -92,6 +92,20 @@
       .bracket-round { min-width: unset; }
     }
 
+    /* Secciones colapsables Admin */
+    details.admin-section { margin-bottom: 1rem; }
+    details.admin-section > summary {
+      cursor: pointer; padding: 10px 14px; background: rgba(13,33,55,0.6);
+      border: 1px solid rgba(192,192,192,0.2); border-radius: 8px;
+      color: #c0c0c0; font-weight: bold; font-size: 0.9rem; list-style: none;
+      display: flex; align-items: center; gap: 8px;
+    }
+    details.admin-section > summary::-webkit-details-marker { display: none; }
+    details.admin-section > summary::before { content: '▶'; font-size: 0.7rem; transition: transform 0.2s; }
+    details.admin-section[open] > summary::before { transform: rotate(90deg); }
+    details.admin-section[open] > summary { border-radius: 8px 8px 0 0; margin-bottom: 0; }
+    details.admin-section > .admin-section-content { padding: 0.5rem 0; }
+
     /* App Header - Colores GCA */
     .app-header {
       background: linear-gradient(135deg, #0d2137, #1a3a5c);
@@ -1032,13 +1046,15 @@
         }
       }
 
-      // Fase de grupos
+      // Fase de grupos — colapsable
+      html += `<details class="admin-section"><summary>⚽ Partidos Fase de Grupos (${Object.values(gruposMap).flat().length} partidos)</summary><div class="admin-section-content">`;
       for (const grupo of Object.keys(gruposMap).sort()) {
         html += `<div class="grupo-titulo">🏳️ Grupo ${grupo}</div>`;
         for (const p of gruposMap[grupo]) html += renderAdminResultadoPartido(p);
       }
+      html += `</div></details>`;
 
-      // Knockout
+      // Knockout — siempre visible
       for (const fase of ['16vos','octavos','cuartos','semifinal','final']) {
         if (!knockoutMap[fase] || !knockoutMap[fase].length) continue;
         html += `<div class="grupo-titulo">🏆 ${FASES_LABEL[fase]}</div>`;
@@ -1474,7 +1490,6 @@
 
       const col = (title, matches) => `
         <div class="bracket-round">
-          <div class="bracket-round-title">${title}</div>
           ${Array.isArray(matches) ? matches.map(m => renderBracketMatch(m)).join('') : (matches ? renderBracketMatch(matches) : '')}
         </div>`;
 
