@@ -143,24 +143,24 @@ const PARTIDOS_72 = [
 
 // ── Partidos Knockout (31 partidos: 16vos + octavos + cuartos + semis + final) ─
 const PARTIDOS_KNOCKOUT = [
-  // 16VOS — Bracket izquierdo
-  [73,'16vos','29/06/2026','11:00','Alemania','Países Bajos'],
-  [74,'16vos','29/06/2026','15:00','Francia','Suecia'],
-  [75,'16vos','29/06/2026','19:00','Sudáfrica','Canadá'],
-  [76,'16vos','30/06/2026','11:00','Paraguay','Marruecos'],
-  [77,'16vos','30/06/2026','15:00','Portugal','Croacia'],
-  [78,'16vos','30/06/2026','19:00','España','Austria'],
-  [79,'16vos','01/07/2026','11:00','Estados Unidos','Bosnia'],
+  // 16VOS — Bracket izquierdo (fechas/hora Colombia)
+  [73,'16vos','29/06/2026','15:30','Alemania','Paraguay'],
+  [74,'16vos','30/06/2026','16:00','Francia','Suecia'],
+  [75,'16vos','28/06/2026','14:00','Sudáfrica','Canadá'],
+  [76,'16vos','29/06/2026','20:00','Países Bajos','Marruecos'],
+  [77,'16vos','02/07/2026','18:00','Portugal','Croacia'],
+  [78,'16vos','02/07/2026','14:00','España','Austria'],
+  [79,'16vos','01/07/2026','19:00','Estados Unidos','Bosnia'],
   [80,'16vos','01/07/2026','15:00','Bélgica','Senegal'],
   // 16VOS — Bracket derecho
-  [81,'16vos','01/07/2026','19:00','Brasil','Japón'],
-  [82,'16vos','02/07/2026','11:00','Costa de Marfil','Noruega'],
-  [83,'16vos','02/07/2026','15:00','México','Ecuador'],
-  [84,'16vos','02/07/2026','19:00','Inglaterra','República Democrática del Congo'],
-  [85,'16vos','29/06/2026','13:00','Argentina','Uzbekistán'],
-  [86,'16vos','30/06/2026','13:00','Australia','Egipto'],
-  [87,'16vos','01/07/2026','13:00','Suiza','Argelia'],
-  [88,'16vos','02/07/2026','13:00','Colombia','Ghana'],
+  [81,'16vos','29/06/2026','12:00','Brasil','Japón'],
+  [82,'16vos','30/06/2026','12:00','Costa de Marfil','Noruega'],
+  [83,'16vos','30/06/2026','20:00','México','Ecuador'],
+  [84,'16vos','01/07/2026','11:00','Inglaterra','República Democrática del Congo'],
+  [85,'16vos','03/07/2026','17:00','Argentina','Cabo Verde'],
+  [86,'16vos','03/07/2026','13:00','Australia','Egipto'],
+  [87,'16vos','02/07/2026','22:00','Suiza','Argelia'],
+  [88,'16vos','03/07/2026','20:30','Colombia','Ghana'],
   // OCTAVOS
   [89,'octavos','04/07/2026','11:00','Por definir','Por definir'],
   [90,'octavos','04/07/2026','15:00','Por definir','Por definir'],
@@ -455,21 +455,29 @@ async function initDB() {
       await client.query("SELECT setval('equipos_id_seq', (SELECT MAX(id) FROM equipos))");
     }
 
-    // ── 4. Insertar partidos knockout si no existen ──────────────────────────
-    const { rows: [{ c: kc }] } = await client.query(
-      "SELECT COUNT(*)::int AS c FROM partidos WHERE id >= 73"
-    );
-    if (kc === 0) {
-      const { rows: [sedeRow2] } = await client.query("SELECT id FROM sedes WHERE slug='gca-cali'");
-      const sedeIdK = sedeRow2 ? sedeRow2.id : 1;
-      for (const [id, fase, fecha, hora, local, visita] of PARTIDOS_KNOCKOUT) {
+    // ── 4. Insertar/actualizar partidos knockout ─────────────────────────────
+    const { rows: [sedeRow2] } = await client.query("SELECT id FROM sedes WHERE slug='gca-cali'");
+    const sedeIdK = sedeRow2 ? sedeRow2.id : 1;
+    for (const [id, fase, fecha, hora, local, visita] of PARTIDOS_KNOCKOUT) {
+      if (id <= 88) {
+        // 16vos: siempre actualizar equipos y fechas (corrige datos incorrectos)
         await client.query(
-          'INSERT INTO partidos (id,grupo,fecha_hora,local,visita,sede_id,bloqueado,fase) VALUES ($1,$2,$3,$4,$5,$6,0,$7)',
+          `INSERT INTO partidos (id,grupo,fecha_hora,local,visita,sede_id,bloqueado,fase)
+           VALUES ($1,$2,$3,$4,$5,$6,0,$7)
+           ON CONFLICT (id) DO UPDATE SET fecha_hora=EXCLUDED.fecha_hora, local=EXCLUDED.local, visita=EXCLUDED.visita, fase=EXCLUDED.fase`,
+          [id, fase, toTimestamp(fecha, hora), local, visita, sedeIdK, fase]
+        );
+      } else {
+        // Rondas avanzadas: solo insertar si no existe (no sobrescribir equipos puestos por advanceWinner)
+        await client.query(
+          `INSERT INTO partidos (id,grupo,fecha_hora,local,visita,sede_id,bloqueado,fase)
+           VALUES ($1,$2,$3,$4,$5,$6,0,$7)
+           ON CONFLICT (id) DO NOTHING`,
           [id, fase, toTimestamp(fecha, hora), local, visita, sedeIdK, fase]
         );
       }
-      console.log('  → 31 partidos de eliminación directa insertados');
     }
+    console.log('  → Partidos de eliminación directa sincronizados');
 
     await client.query('COMMIT');
     console.log('✅ PostgreSQL inicializado correctamente');
